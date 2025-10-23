@@ -118,6 +118,10 @@ async function loadFixedDeviceLocation() {
         } else {
             document.getElementById('fixedLocation').textContent = 'No GPS data available';
         }
+		// Second change: Set statusText based on GPS availability
+        let statusText = gps ? 'Location fixed' : 'Loading...';
+        document.getElementById('locationStatus').textContent = statusText;
+		
     } catch (error) {
         console.error('Error loading fixed device location:', error);
     }
@@ -194,6 +198,9 @@ async function loadMobileRoute() {
         console.log('2. Sample record:', history[0]);
         
         if (history.length > 0) {
+			// Sort ascending for oldest first (left to right on map)
+            history.sort((a, b) => a.timestamp - b.timestamp);
+			
             const points = history.filter(d => d.gps && d.gps.trim() !== '').map(d => {
                 const [lat, lon] = d.gps.split(',').map(parseFloat);
                 return { lat, lon, data: d };
