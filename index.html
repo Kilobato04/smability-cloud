@@ -211,17 +211,32 @@
             </div>
 
             <!-- Historical Chart -->
-            <div class="chart-container">
-                <div class="chart-header">
-                    <h2>Historical Data (Last 24 Hours)</h2>
-                    <div class="chart-controls">
-                        <button class="chart-btn" onclick="updateChartRange(6)">6H</button>
-                        <button class="chart-btn active" onclick="updateChartRange(24)">24H</button>
-                        <button class="chart-btn" onclick="updateChartRange(48)">48H</button>
-                    </div>
-                </div>
-                <canvas id="historyChart"></canvas>
-            </div>
+			<div class="chart-container">
+			    <div class="chart-header">
+			        <h2>Historical Data (Last 24 Hours)</h2>
+			        <div class="chart-controls">
+			            <button class="chart-btn" onclick="updateChartRange(6)">6H</button>
+			            <button class="chart-btn active" onclick="updateChartRange(24)">24H</button>
+			            <button class="chart-btn" onclick="updateChartRange(48)">48H</button>
+			        </div>
+			    </div>
+    
+			    <!-- 4 separate chart panels -->
+			    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 20px;">
+			        <div style="height: 300px;">
+			            <canvas id="airQualityChart"></canvas>
+			        </div>
+			        <div style="height: 300px;">
+			            <canvas id="environmentChart"></canvas>
+			        </div>
+			        <div style="height: 300px;">
+			            <canvas id="gasesChart"></canvas>
+			        </div>
+			        <div style="height: 300px;">
+			            <canvas id="noiseChart"></canvas>
+			        </div>
+			    </div>
+			</div>
         </div>
 
         <!-- Fixed Location Map Tab -->
