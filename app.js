@@ -9,7 +9,10 @@ let autoRefreshEnabled = true;
 let refreshTimer = null;
 let countdownTimer = null;
 let secondsLeft = CONFIG.AUTO_REFRESH_INTERVAL / 1000;
-let historyChart = null;
+let airQualityChart = null;
+let environmentChart = null;
+let gasesChart = null;
+let noiseChart = null;
 let currentChartHours = CONFIG.DEFAULT_CHART_HOURS;
 let allDevices = [];
 
@@ -179,94 +182,209 @@ function updateStatusBadge(sensor, value) {
     badge.className = 'card-status ' + status.class;
 }
 
-// ==================== CHART MANAGEMENT ====================
+// ==================== MULTI-PANEL CHART MANAGEMENT ====================
 function updateChart(data) {
     if (!data || data.length === 0) return;
 
-    const labels = data.map(d => formatTimestamp(d.timestamp));
+    const labels = data.map(d => formatTimestamp(d.timestamp)).reverse();
+	const reversedData = data.reverse();  // Reverse data to match labels
 
-    const datasets = [
-        {
-            label: 'PM2.5 (μg/m³)',
-            data: data.map(d => d.pm25),
-            borderColor: CONFIG.CHART_COLORS.pm25,
-            backgroundColor: CONFIG.CHART_COLORS.pm25 + '20',
-            tension: 0.4,
-            yAxisID: 'y'
-        },
-        {
-            label: 'PM10 (μg/m³)',
-            data: data.map(d => d.pm10),
-            borderColor: CONFIG.CHART_COLORS.pm10,
-            backgroundColor: CONFIG.CHART_COLORS.pm10 + '20',
-            tension: 0.4,
-            yAxisID: 'y'
-        },
-        {
-            label: 'Ozone (ppb)',
-            data: data.map(d => d.o3),
-            borderColor: CONFIG.CHART_COLORS.o3,
-            backgroundColor: CONFIG.CHART_COLORS.o3 + '20',
-            tension: 0.4,
-            yAxisID: 'y'
-        },
-        {
-            label: 'CO (ppb)',
-            data: data.map(d => d.co),
-            borderColor: CONFIG.CHART_COLORS.co,
-            backgroundColor: CONFIG.CHART_COLORS.co + '20',
-            tension: 0.4,
-            yAxisID: 'y2'  // Separate axis if scale differs
-        },
-        {
-            label: 'Temperature (°C)',
-            data: data.map(d => d.temperature),
-            borderColor: CONFIG.CHART_COLORS.temperature,
-            backgroundColor: CONFIG.CHART_COLORS.temperature + '20',
-            tension: 0.4,
-            yAxisID: 'y'
-        },
-        {
-            label: 'Humidity (%)',
-            data: data.map(d => d.humidity),
-            borderColor: CONFIG.CHART_COLORS.humidity,
-            backgroundColor: CONFIG.CHART_COLORS.humidity + '20',
-            tension: 0.4,
-            yAxisID: 'y'
-        },
-        {
-            label: 'Noise (dBA)',
-            data: data.map(d => d.noise),
-            borderColor: CONFIG.CHART_COLORS.noise,
-            backgroundColor: CONFIG.CHART_COLORS.noise + '20',
-            tension: 0.4,
-            yAxisID: 'y'
-        },
-        {
-            label: 'Battery (%)',
-            data: data.map(d => d.battery),
-            borderColor: CONFIG.CHART_COLORS.battery,
-            backgroundColor: CONFIG.CHART_COLORS.battery + '20',
-            tension: 0.4,
-            yAxisID: 'y'
-        }
-    ];
+    // Panel 1: Air Quality (PM2.5 & PM10)
+    updateAirQualityChart(reversedData, labels);
+    
+    // Panel 2: Environment (Temperature & Humidity)
+    updateEnvironmentChart(reversedData, labels);
+    
+    // Panel 3: Gases (CO & O3)
+    updateGasesChart(reversedData, labels);
+    
+    // Panel 4: Noise
+    updateNoiseChart(reversedData, labels);
+}
 
-    if (historyChart) historyChart.destroy();
-    const ctx = document.getElementById('historyChart').getContext('2d');
-    historyChart = new Chart(ctx, {
+function updateAirQualityChart(data, labels) {
+    if (airQualityChart) airQualityChart.destroy();
+    const ctx = document.getElementById('airQualityChart').getContext('2d');
+    
+    airQualityChart = new Chart(ctx, {
         type: 'line',
-        data: { labels, datasets },
-        options: {
-            responsive: true,
-            interaction: { mode: 'index', intersect: false },
-            scales: {
-                y: { beginAtZero: true, position: 'left' },
-                y2: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } },
-                x: { grid: { color: 'rgba(0, 0, 0, 0.05)' } }
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'PM2.5 (μg/m³)',
+                    data: data.map(d => d.pm25),
+                    borderColor: CONFIG.CHART_COLORS.pm25,
+                    backgroundColor: CONFIG.CHART_COLORS.pm25 + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true
+                },
+                {
+                    label: 'PM10 (μg/m³)',
+                    data: data.map(d => d.pm10),
+                    borderColor: CONFIG.CHART_COLORS.pm10,
+                    backgroundColor: CONFIG.CHART_COLORS.pm10 + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true
+                }
+            ]
+        },
+        options: getChartOptions('Air Quality (PM2.5 & PM10)', 'μg/m³')
+    });
+	
+	// Refresh fixed map if tab is active
+	if (document.getElementById('fixed-map-tab').classList.contains('active')) {
+	    loadFixedDeviceLocation();
+	}
+}
+
+function updateEnvironmentChart(data, labels) {
+    if (environmentChart) environmentChart.destroy();
+    const ctx = document.getElementById('environmentChart').getContext('2d');
+    
+    environmentChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'Temperature (°C)',
+                    data: data.map(d => d.temperature),
+                    borderColor: CONFIG.CHART_COLORS.temperature,
+                    backgroundColor: CONFIG.CHART_COLORS.temperature + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    yAxisID: 'y',
+                    fill: true
+                },
+                {
+                    label: 'Humidity (%)',
+                    data: data.map(d => d.humidity),
+                    borderColor: CONFIG.CHART_COLORS.humidity,
+                    backgroundColor: CONFIG.CHART_COLORS.humidity + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    yAxisID: 'y1',
+                    fill: true
+                }
+            ]
+        },
+        options: getDualAxisChartOptions('Temperature & Humidity', '°C', '%')
+    });
+}
+
+function updateGasesChart(data, labels) {
+    if (gasesChart) gasesChart.destroy();
+    const ctx = document.getElementById('gasesChart').getContext('2d');
+    
+    gasesChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'CO (ppb)',
+                    data: data.map(d => d.co),
+                    borderColor: CONFIG.CHART_COLORS.co,
+                    backgroundColor: CONFIG.CHART_COLORS.co + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    yAxisID: 'y',
+                    fill: true
+                },
+                {
+                    label: 'Ozone (ppb)',
+                    data: data.map(d => d.o3),
+                    borderColor: CONFIG.CHART_COLORS.o3,
+                    backgroundColor: CONFIG.CHART_COLORS.o3 + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    yAxisID: 'y1',
+                    fill: true
+                }
+            ]
+        },
+        options: getDualAxisChartOptions('Gaseous Pollutants (CO & O₃)', 'CO (ppb)', 'O₃ (ppb)')
+    });
+}
+
+function updateNoiseChart(data, labels) {
+    if (noiseChart) noiseChart.destroy();
+    const ctx = document.getElementById('noiseChart').getContext('2d');
+    
+    noiseChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'Noise (dBA)',
+                    data: data.map(d => d.noise),
+                    borderColor: CONFIG.CHART_COLORS.noise,
+                    backgroundColor: CONFIG.CHART_COLORS.noise + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true
+                }
+            ]
+        },
+        options: getChartOptions('Noise Level', 'dBA')
+    });
+}
+
+function getChartOptions(title, yLabel) {
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            title: { display: true, text: title, font: { size: 14, weight: 'bold' } },
+            legend: { position: 'top' }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                title: { display: true, text: yLabel, font: { weight: 'bold' } }
+            },
+            x: {
+                ticks: { maxRotation: 45, minRotation: 45, maxTicksLimit: 8 },
+                grid: { color: 'rgba(0, 0, 0, 0.05)' }
             }
         }
-    });
+    };
+}
+
+function getDualAxisChartOptions(title, yLabel, y1Label) {
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            title: { display: true, text: title, font: { size: 14, weight: 'bold' } },
+            legend: { position: 'top' }
+        },
+        scales: {
+            y: {
+                type: 'linear',
+                position: 'left',
+                beginAtZero: true,
+                title: { display: true, text: yLabel, font: { weight: 'bold' } }
+            },
+            y1: {
+                type: 'linear',
+                position: 'right',
+                beginAtZero: true,
+                title: { display: true, text: y1Label, font: { weight: 'bold' } },
+                grid: { drawOnChartArea: false }
+            },
+            x: {
+                ticks: { maxRotation: 45, minRotation: 45, maxTicksLimit: 8 },
+                grid: { color: 'rgba(0, 0, 0, 0.05)' }
+            }
+        }
+    };
 }
 
 function updateChartRange(hours) {
@@ -329,7 +447,18 @@ function startAutoRefresh() {
     if (refreshTimer) clearInterval(refreshTimer);
     if (countdownTimer) clearInterval(countdownTimer);
     
-    refreshTimer = setInterval(fetchData, CONFIG.AUTO_REFRESH_INTERVAL);
+    //refreshTimer = setInterval(fetchData, CONFIG.AUTO_REFRESH_INTERVAL);
+	
+	refreshTimer = setInterval(() => {
+	    fetchData();
+	    // NEW: Refresh active tabs
+	    if (document.getElementById('fixed-map-tab').classList.contains('active')) {
+	        loadFixedDeviceLocation();
+	    }
+	    if (document.getElementById('mobile-map-tab').classList.contains('active')) {
+	        loadMobileRoute();
+	    }
+	}, CONFIG.AUTO_REFRESH_INTERVAL);
     
     countdownTimer = setInterval(() => {
         secondsLeft--;
