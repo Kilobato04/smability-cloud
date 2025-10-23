@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMAA Air Quality Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">🌍</span>
+                <h1>SMAA Air Quality Monitor</h1>
+            </div>
+            <div class="header-meta">
+                <span class="version">v1.0</span>
+                <span class="powered-by">Powered by AWS IoT Core</span>
+            </div>
+        </header>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-indicator" id="apiStatus"></span>
+                <div class="status-content">
+                    <div class="status-label">Connection</div>
+                    <div class="status-value" id="apiStatusText">Connecting...</div>
+                </div>
+            </div>
+            
+            <div class="status-item">
+                <div class="status-content">
+                    <div class="status-label">Last Update</div>
+                    <div class="status-value" id="lastUpdate">--:--:--</div>
+                </div>
+            </div>
+            
+            <div class="status-item">
+                <div class="status-content">
+                    <div class="status-label">Active Device</div>
+                    <div class="status-value" id="deviceName">--</div>
+                </div>
+            </div>
+            
+            <div class="status-item">
+                <div class="status-content">
+                    <div class="status-label">Mode</div>
+                    <div class="status-value" id="deviceMode">
+                        <span class="mode-badge" id="modeBadge">--</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="status-item">
+                <div class="status-content">
+                    <div class="status-label">Auto-Refresh</div>
+                    <div class="status-value refresh-counter" id="refreshCounter">10s</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('dashboard')">
+                📊 Dashboard
+            </button>
+            <button class="tab-btn" onclick="switchTab('fixed-map')">
+                📍 Fixed Location
+            </button>
+            <button class="tab-btn" onclick="switchTab('mobile-map')">
+                🚶 Mobile Tracking
+            </button>
+        </div>
+
+        <!-- Dashboard Tab Content -->
+        <div id="dashboard-tab" class="tab-content active">
+            <!-- Controls -->
+            <div class="controls">
+                <div class="control-group">
+                    <label class="control-label">
+                        <span class="control-icon">📱</span>
+                        Select Device
+                        <select id="deviceSelect" class="device-select" onchange="changeDevice()">
+                            <option value="">Loading devices...</option>
+                        </select>
+                    </label>
+                </div>
+                
+                <div class="control-buttons">
+                    <button class="btn btn-primary" onclick="fetchData()">
+                        <span class="btn-icon">🔄</span>
+                        Refresh Now
+                    </button>
+                    <button class="btn btn-secondary" onclick="toggleAutoRefresh()" id="autoRefreshBtn">
+                        <span class="btn-icon">⏸️</span>
+                        Pause Auto-Refresh
+                    </button>
+                </div>
+            </div>
+
+            <!-- Device Statistics Summary -->
+            <div class="device-summary" id="deviceSummary">
+                <div class="summary-card">
+                    <div class="summary-icon">📊</div>
+                    <div class="summary-content">
+                        <div class="summary-value" id="totalDevices">--</div>
+                        <div class="summary-label">Total Devices</div>
+                    </div>
+                </div>
+                <div class="summary-card online">
+                    <div class="summary-icon">✅</div>
+                    <div class="summary-content">
+                        <div class="summary-value" id="onlineDevices">--</div>
+                        <div class="summary-label">Online</div>
+                    </div>
+                </div>
+                <div class="summary-card offline">
+                    <div class="summary-icon">⚠️</div>
+                    <div class="summary-content">
+                        <div class="summary-value" id="offlineDevices">--</div>
+                        <div class="summary-label">Offline</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sensor Cards Grid -->
+            <div class="grid">
+                <div class="card pm25-card">
+                    <div class="card-header">
+                        <span class="card-title">PM2.5</span>
+                        <span class="card-icon">💨</span>
+                    </div>
+                    <div class="card-value" id="pm25Value">--</div>
+                    <div class="card-unit">μg/m³</div>
+                    <span class="card-status" id="pm25Status">Loading...</span>
+                </div>
+
+                <div class="card pm10-card">
+                    <div class="card-header">
+                        <span class="card-title">PM10</span>
+                        <span class="card-icon">🌫️</span>
+                    </div>
+                    <div class="card-value" id="pm10Value">--</div>
+                    <div class="card-unit">μg/m³</div>
+                    <span class="card-status" id="pm10Status">Loading...</span>
+                </div>
+
+                <div class="card o3-card">
+                    <div class="card-header">
+                        <span class="card-title">Ozone (O₃)</span>
+                        <span class="card-icon">☁️</span>
+                    </div>
+                    <div class="card-value" id="o3Value">--</div>
+                    <div class="card-unit">ppb</div>
+                    <span class="card-status" id="o3Status">Loading...</span>
+                </div>
+
+                <div class="card co-card">
+                    <div class="card-header">
+                        <span class="card-title">Carbon Monoxide</span>
+                        <span class="card-icon">⚠️</span>
+                    </div>
+                    <div class="card-value" id="coValue">--</div>
+                    <div class="card-unit">ppb</div>
+                    <span class="card-status" id="coStatus">Loading...</span>
+                </div>
+
+                <div class="card temp-card">
+                    <div class="card-header">
+                        <span class="card-title">Temperature</span>
+                        <span class="card-icon">🌡️</span>
+                    </div>
+                    <div class="card-value" id="tempValue">--</div>
+                    <div class="card-unit">°C</div>
+                </div>
+
+                <div class="card humidity-card">
+                    <div class="card-header">
+                        <span class="card-title">Humidity</span>
+                        <span class="card-icon">💧</span>
+                    </div>
+                    <div class="card-value" id="humidityValue">--</div>
+                    <div class="card-unit">%</div>
+                </div>
+
+                <div class="card noise-card">
+                    <div class="card-header">
+                        <span class="card-title">Noise Level</span>
+                        <span class="card-icon">🔊</span>
+                    </div>
+                    <div class="card-value" id="noiseValue">--</div>
+                    <div class="card-unit">dBA</div>
+                </div>
+
+                <div class="card battery-card">
+                    <div class="card-header">
+                        <span class="card-title">Battery</span>
+                        <span class="card-icon">🔋</span>
+                    </div>
+                    <div class="card-value" id="batteryValue">--</div>
+                    <div class="card-unit">%</div>
+                    <div class="battery-indicator">
+                        <div class="battery-fill" id="batteryFill"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Historical Chart -->
+            <div class="chart-container">
+                <div class="chart-header">
+                    <h2>Historical Data (Last 24 Hours)</h2>
+                    <div class="chart-controls">
+                        <button class="chart-btn" onclick="updateChartRange(6)">6H</button>
+                        <button class="chart-btn active" onclick="updateChartRange(24)">24H</button>
+                        <button class="chart-btn" onclick="updateChartRange(48)">48H</button>
+                    </div>
+                </div>
+                <canvas id="historyChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Fixed Location Map Tab -->
+        <div id="fixed-map-tab" class="tab-content">
+            <div class="map-container-wrapper">
+                <div class="map-sidebar">
+                    <h3>Device Location</h3>
+                    <div class="map-info">
+                        <div class="info-row">
+                            <span class="info-label">Device:</span>
+                            <span class="info-value" id="fixedDeviceName">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Location:</span>
+                            <span class="info-value" id="fixedLocation">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Status:</span>
+                            <span class="info-value" id="locationStatus">Loading...</span>  <!-- NEW: Legend for location status -->
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">PM2.5:</span>
+                            <span class="info-value" id="fixedPM25">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Temperature:</span>
+                            <span class="info-value" id="fixedTemp">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Last Update:</span>
+                            <span class="info-value" id="fixedLastUpdate">--</span>
+                        </div>
+                    </div>
+                </div>
+                <div id="fixedMap" class="map-view"></div>
+            </div>
+        </div>
+
+        <!-- Mobile Tracking Map Tab -->
+        <div id="mobile-map-tab" class="tab-content">
+            <div class="mobile-controls">
+                <div class="mobile-control-group">
+                    <label>Select Device:
+                        <select id="mobileDeviceSelect" onchange="loadMobileRoute()">
+                            <option value="">Loading...</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="mobile-control-group">
+                    <label>Visualize:
+                        <select id="sensorSelect" onchange="updateMobileVisualization()">
+                            <option value="pm25">PM2.5</option>
+                            <option value="pm10">PM10</option>
+                            <option value="o3">Ozone (O₃)</option>
+                            <option value="co">Carbon Monoxide</option>
+                            <option value="temperature">Temperature</option>
+                            <option value="humidity">Humidity</option>
+                            <option value="noise">Noise Level</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="mobile-control-group">
+                    <label>Time Range:
+                        <select id="timeRange" onchange="loadMobileRoute()">
+                            <option value="1">Last Hour</option>
+                            <option value="6">Last 6 Hours</option>
+                            <option value="24" selected>Last 24 Hours</option>
+                            <option value="48">Last 48 Hours</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+
+            <div class="legend-container">
+                <h4>Color Legend</h4>
+                <div class="legend-items" id="legendItems">
+                    <!-- Dynamic legend based on selected sensor -->
+                </div>
+            </div>
+
+            <div id="mobileMap" class="map-view-mobile"></div>
+
+            <div class="mobile-stats">
+                <div class="stat-card">
+                    <div class="stat-label">Total Distance</div>
+                    <div class="stat-value" id="totalDistance">-- km</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Data Points</div>
+                    <div class="stat-value" id="dataPoints">--</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Avg Exposure</div>
+                    <div class="stat-value" id="avgExposure">--</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Peak Value</div>
+                    <div class="stat-value" id="peakValue">--</div>
+                </div>
+            </div>
+		    <!-- ADD THE CHART RIGHT HERE -->
+		    <div class="chart-container">
+		        <canvas id="mobileChart" style="height: 400px;"></canvas>
+		    </div>
+        </div>
+		
+	   
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-content">
+                <p>&copy; 2025 SMAA Air Quality Monitoring System</p>
+                <p class="footer-links">
+                    <a href="#" onclick="showAbout()">About</a>
+                    <span>•</span>
+                    <a href="#" onclick="showHelp()">Help</a>
+                    <span>•</span>
+                    <a href="#" onclick="exportData()">Export Data</a>
+                </p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <p>Loading dashboard...</p>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+    <script src="maps.js"></script>
+</body>
+</html>
