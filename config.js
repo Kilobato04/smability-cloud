@@ -4,7 +4,7 @@ const CONFIG = {
     TIMEZONE: 'America/Mexico_City',  // UTC-6; adjust as needed
     USE_24_HOUR_FORMAT: false,  // 12-hour format
     SHOW_SECONDS: false,  // No seconds in timestamps
-    AUTO_REFRESH_INTERVAL: 10000,  // 10 seconds
+    AUTO_REFRESH_INTERVAL: 20000,  // 20 seconds
     HISTORY_LIMIT: 100,  // Max history points
     DEFAULT_CHART_HOURS: 24,  // Default chart range
     FEATURES: {
