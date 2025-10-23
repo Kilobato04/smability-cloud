@@ -1,0 +1,38 @@
+{
+  "name": "smaa-air-quality-dashboard",
+  "version": "1.0.0",
+  "description": "Real-time air quality monitoring dashboard for SMAA IoT devices using AWS IoT Core",
+  "main": "index.html",
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "serve": "npx http-server -p 8000 -c-1",
+    "deploy": "aws s3 sync . s3://smaa-dashboard --exclude '*.md' --exclude 'node_modules/*' --exclude '.git/*'",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/[YOUR_USERNAME]/smaa-air-quality-dashboard.git"
+  },
+  "keywords": [
+    "air-quality",
+    "iot",
+    "dashboard",
+    "aws",
+    "real-time",
+    "monitoring",
+    "smaa",
+    "environmental"
+  ],
+  "author": "SMAA Team",
+  "license": "PROPRIETARY",
+  "bugs": {
+    "url": "https://github.com/Kilobato04/smaa-air-quality-dashboard/issues"
+  },
+  "homepage": "https://github.com/Kilobato04/smaa-air-quality-dashboard#readme",
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
