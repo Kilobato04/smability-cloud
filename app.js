@@ -99,32 +99,72 @@ function updateUI(data) {
         setTimeout(() => el.classList.remove('updating'), 300);
     });
 
-    // NEW: GPS buffering for accurate fixed location (after 5 points)
+    // IMPROVED GPS buffering logic
     const deviceKey = data.deviceID;
-    let gpsBuffer = JSON.parse(localStorage.getItem(`${deviceKey}_gps_buffer`) || '[]');
-    let previousMode = localStorage.getItem(`${deviceKey}_previous_mode`) || null;
-
+    
     if (data.mode == 1 && data.gps && data.gps.trim() !== '') {
+        // Device is mobile - buffer GPS readings
+        let gpsBuffer = JSON.parse(localStorage.getItem(`${deviceKey}_gps_buffer`) || '[]');
         const [lat, lon] = data.gps.split(',').map(parseFloat);
-        gpsBuffer.push({lat, lon});
-        if (gpsBuffer.length > 5) gpsBuffer = gpsBuffer.slice(-5);  // Keep last 5
+        
+        // Add timestamp to buffer entry
+        gpsBuffer.push({
+            lat, 
+            lon, 
+            timestamp: data.timestamp
+        });
+        
+        // Keep last 5 readings
+        if (gpsBuffer.length > 5) {
+            gpsBuffer = gpsBuffer.slice(-5);
+        }
+        
         localStorage.setItem(`${deviceKey}_gps_buffer`, JSON.stringify(gpsBuffer));
         localStorage.setItem(`${deviceKey}_previous_mode`, '1');
-        console.log(`Buffered GPS for ${deviceKey} in mode 1: ${data.gps} (buffer size: ${gpsBuffer.length})`);
+        
+        console.log(`Buffered GPS for ${deviceKey}: ${data.gps} (buffer: ${gpsBuffer.length}/5)`);
+        
+        // Auto-average when we have 5 points
+        if (gpsBuffer.length === 5) {
+            const avgLat = gpsBuffer.reduce((sum, p) => sum + p.lat, 0) / 5;
+            const avgLon = gpsBuffer.reduce((sum, p) => sum + p.lon, 0) / 5;
+            const avgGPS = `${avgLat.toFixed(6)},${avgLon.toFixed(6)}`;
+            
+            localStorage.setItem(`${deviceKey}_fixed_gps`, avgGPS);
+            localStorage.setItem(`${deviceKey}_fixed_gps_timestamp`, Date.now().toString());
+            
+            console.log(`Auto-saved averaged GPS for ${deviceKey}: ${avgGPS}`);
+        }
+    }
+    
+    // Detect mode transition from mobile (1) to fixed (0)
+    const previousMode = localStorage.getItem(`${deviceKey}_previous_mode`);
+    if (previousMode == '1' && data.mode == 0) {
+        const gpsBuffer = JSON.parse(localStorage.getItem(`${deviceKey}_gps_buffer`) || '[]');
+        
+        if (gpsBuffer.length >= 3) {
+            // Calculate average from buffer
+            const avgLat = gpsBuffer.reduce((sum, p) => sum + p.lat, 0) / gpsBuffer.length;
+            const avgLon = gpsBuffer.reduce((sum, p) => sum + p.lon, 0) / gpsBuffer.length;
+            const avgGPS = `${avgLat.toFixed(6)},${avgLon.toFixed(6)}`;
+            
+            localStorage.setItem(`${deviceKey}_fixed_gps`, avgGPS);
+            localStorage.setItem(`${deviceKey}_fixed_gps_timestamp`, Date.now().toString());
+            
+            console.log(`Mode transition: Saved averaged GPS for ${deviceKey}: ${avgGPS}`);
+        }
+        
+        // Clear buffer after transition
+        localStorage.removeItem(`${deviceKey}_gps_buffer`);
+        localStorage.setItem(`${deviceKey}_previous_mode`, '0');
+    }
+    
+    // Update current mode
+    if (data.mode == 0) {
+        localStorage.setItem(`${deviceKey}_previous_mode`, '0');
     }
 
-    // Detect transition: If previous was 1 and now 0, average if buffer has 5 points
-    if (previousMode == '1' && data.mode == 0 && gpsBuffer.length === 5) {
-        const avgLat = gpsBuffer.reduce((sum, p) => sum + p.lat, 0) / 5;
-        const avgLon = gpsBuffer.reduce((sum, p) => sum + p.lon, 0) / 5;
-        const avgGPS = `${avgLat.toFixed(6)},${avgLon.toFixed(6)}`;
-        localStorage.setItem(`${deviceKey}_fixed_gps`, avgGPS);
-        localStorage.removeItem(`${deviceKey}_gps_buffer`);  // Clear buffer
-        localStorage.removeItem(`${deviceKey}_previous_mode`);
-        console.log(`Stored averaged fixed GPS for ${deviceKey} after transition: ${avgGPS}`);
-    }
-
-    // Update sensor values
+    // Update sensor values (rest stays the same)
     document.getElementById('pm25Value').textContent = data.pm25 || '--';
     document.getElementById('pm10Value').textContent = data.pm10 || '--';
     document.getElementById('o3Value').textContent = data.o3 || '--';
@@ -146,13 +186,13 @@ function updateUI(data) {
     } else {
         batteryFill.style.background = 'linear-gradient(90deg, #10b981, #34d399)';
     }
-
+    
     // Update status badges
     updateStatusBadge('pm25', data.pm25);
     updateStatusBadge('pm10', data.pm10);
     updateStatusBadge('o3', data.o3);
     updateStatusBadge('co', data.co);
-
+    
     // Update metadata
     const lastUpdate = formatRelativeTime(data.timestamp);
     const fullTime = formatTimestamp(data.timestamp);
@@ -169,7 +209,7 @@ function updateUI(data) {
         modeBadge.textContent = 'Fixed';
         modeBadge.className = 'mode-badge mode-fixed';
     }
-
+    
     // Update API status
     updateAPIStatus('online', 'Connected');
 }
@@ -202,9 +242,50 @@ function updateChart(data) {
     updateNoiseChart(reversedData, labels);
 }
 
+// ==================== IMPROVED CHART FUNCTIONS ====================
+// Replace the chart functions in app.js with these:
+
+function updateChart(data) {
+    if (!data || data.length === 0) return;
+
+    // Sort ascending for oldest first (left to right)
+    data.sort((a, b) => a.timestamp - b.timestamp);
+    
+    const labels = data.map(d => formatTimestamp(d.timestamp));
+
+    // Panel 1: Air Quality (PM2.5 & PM10)
+    updateAirQualityChart(data, labels);
+    
+    // Panel 2: Environment (Temperature & Humidity)
+    updateEnvironmentChart(data, labels);
+    
+    // Panel 3: Gases (CO & O3)
+    updateGasesChart(data, labels);
+    
+    // Panel 4: Noise
+    updateNoiseChart(data, labels);
+}
+
 function updateAirQualityChart(data, labels) {
     if (airQualityChart) airQualityChart.destroy();
     const ctx = document.getElementById('airQualityChart').getContext('2d');
+    
+    // Detect gaps in data (more than 5 minutes between readings)
+    const pm25Data = data.map((d, i) => {
+        if (i > 0) {
+            const timeDiff = d.timestamp - data[i-1].timestamp;
+            if (timeDiff > 300) return null; // 5 minute gap
+        }
+        return d.pm25;
+    });
+    
+    const pm10Data = data.map((d, i) => {
+        if (i > 0) {
+            const timeDiff = d.timestamp - data[i-1].timestamp;
+            if (timeDiff > 300) return null;
+        }
+        return d.pm10;
+    });
     
     airQualityChart = new Chart(ctx, {
         type: 'line',
@@ -212,37 +293,44 @@ function updateAirQualityChart(data, labels) {
             labels,
             datasets: [
                 {
-                    label: 'PM2.5 (μg/m³)',
-                    data: data.map(d => d.pm25),
+                    label: 'PM2.5',
+                    data: pm25Data,
                     borderColor: CONFIG.CHART_COLORS.pm25,
                     backgroundColor: CONFIG.CHART_COLORS.pm25 + '20',
                     borderWidth: 2,
                     tension: 0.3,
-                    fill: true
+                    fill: true,
+                    spanGaps: false // Don't connect across null values
                 },
                 {
-                    label: 'PM10 (μg/m³)',
-                    data: data.map(d => d.pm10),
+                    label: 'PM10',
+                    data: pm10Data,
                     borderColor: CONFIG.CHART_COLORS.pm10,
                     backgroundColor: CONFIG.CHART_COLORS.pm10 + '20',
                     borderWidth: 2,
                     tension: 0.3,
-                    fill: true
+                    fill: true,
+                    spanGaps: false
                 }
             ]
         },
         options: getChartOptions('Air Quality (PM2.5 & PM10)', 'μg/m³')
     });
-	
-	// Refresh fixed map if tab is active
-	if (document.getElementById('fixed-map-tab').classList.contains('active')) {
-	    loadFixedDeviceLocation();
-	}
 }
 
 function updateEnvironmentChart(data, labels) {
     if (environmentChart) environmentChart.destroy();
     const ctx = document.getElementById('environmentChart').getContext('2d');
+    
+    const tempData = data.map((d, i) => {
+        if (i > 0 && d.timestamp - data[i-1].timestamp > 300) return null;
+        return d.temperature;
+    });
+    
+    const humidityData = data.map((d, i) => {
+        if (i > 0 && d.timestamp - data[i-1].timestamp > 300) return null;
+        return d.humidity;
+    });
     
     environmentChart = new Chart(ctx, {
         type: 'line',
@@ -250,24 +338,26 @@ function updateEnvironmentChart(data, labels) {
             labels,
             datasets: [
                 {
-                    label: 'Temperature (°C)',
-                    data: data.map(d => d.temperature),
+                    label: 'Temperature',
+                    data: tempData,
                     borderColor: CONFIG.CHART_COLORS.temperature,
                     backgroundColor: CONFIG.CHART_COLORS.temperature + '20',
                     borderWidth: 2,
                     tension: 0.3,
                     yAxisID: 'y',
-                    fill: true
+                    fill: true,
+                    spanGaps: false
                 },
                 {
-                    label: 'Humidity (%)',
-                    data: data.map(d => d.humidity),
+                    label: 'Humidity',
+                    data: humidityData,
                     borderColor: CONFIG.CHART_COLORS.humidity,
                     backgroundColor: CONFIG.CHART_COLORS.humidity + '20',
                     borderWidth: 2,
                     tension: 0.3,
                     yAxisID: 'y1',
-                    fill: true
+                    fill: true,
+                    spanGaps: false
                 }
             ]
         },
@@ -279,30 +369,42 @@ function updateGasesChart(data, labels) {
     if (gasesChart) gasesChart.destroy();
     const ctx = document.getElementById('gasesChart').getContext('2d');
     
+    const coData = data.map((d, i) => {
+        if (i > 0 && d.timestamp - data[i-1].timestamp > 300) return null;
+        return d.co;
+    });
+    
+    const o3Data = data.map((d, i) => {
+        if (i > 0 && d.timestamp - data[i-1].timestamp > 300) return null;
+        return d.o3;
+    });
+    
     gasesChart = new Chart(ctx, {
         type: 'line',
         data: {
             labels,
             datasets: [
                 {
-                    label: 'CO (ppb)',
-                    data: data.map(d => d.co),
+                    label: 'CO',
+                    data: coData,
                     borderColor: CONFIG.CHART_COLORS.co,
                     backgroundColor: CONFIG.CHART_COLORS.co + '20',
                     borderWidth: 2,
                     tension: 0.3,
                     yAxisID: 'y',
-                    fill: true
+                    fill: true,
+                    spanGaps: false
                 },
                 {
-                    label: 'Ozone (ppb)',
-                    data: data.map(d => d.o3),
+                    label: 'Ozone',
+                    data: o3Data,
                     borderColor: CONFIG.CHART_COLORS.o3,
                     backgroundColor: CONFIG.CHART_COLORS.o3 + '20',
                     borderWidth: 2,
                     tension: 0.3,
                     yAxisID: 'y1',
-                    fill: true
+                    fill: true,
+                    spanGaps: false
                 }
             ]
         },
@@ -314,19 +416,25 @@ function updateNoiseChart(data, labels) {
     if (noiseChart) noiseChart.destroy();
     const ctx = document.getElementById('noiseChart').getContext('2d');
     
+    const noiseData = data.map((d, i) => {
+        if (i > 0 && d.timestamp - data[i-1].timestamp > 300) return null;
+        return d.noise;
+    });
+    
     noiseChart = new Chart(ctx, {
         type: 'line',
         data: {
             labels,
             datasets: [
                 {
-                    label: 'Noise (dBA)',
-                    data: data.map(d => d.noise),
+                    label: 'Noise',
+                    data: noiseData,
                     borderColor: CONFIG.CHART_COLORS.noise,
                     backgroundColor: CONFIG.CHART_COLORS.noise + '20',
                     borderWidth: 2,
                     tension: 0.3,
-                    fill: true
+                    fill: true,
+                    spanGaps: false
                 }
             ]
         },
@@ -338,18 +446,53 @@ function getChartOptions(title, yLabel) {
     return {
         responsive: true,
         maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
+        interaction: { 
+            mode: 'index', 
+            intersect: false 
+        },
         plugins: {
-            title: { display: true, text: title, font: { size: 14, weight: 'bold' } },
-            legend: { position: 'top' }
+            title: { 
+                display: true, 
+                text: title, 
+                font: { 
+                    size: window.innerWidth < 768 ? 12 : 14, 
+                    weight: 'bold' 
+                } 
+            },
+            legend: { 
+                position: window.innerWidth < 768 ? 'bottom' : 'top',
+                labels: {
+                    font: { size: window.innerWidth < 768 ? 10 : 12 },
+                    boxWidth: window.innerWidth < 768 ? 30 : 40
+                }
+            },
+            tooltip: {
+                enabled: true,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                padding: window.innerWidth < 768 ? 8 : 12,
+                titleFont: { size: window.innerWidth < 768 ? 11 : 13 },
+                bodyFont: { size: window.innerWidth < 768 ? 10 : 12 }
+            }
         },
         scales: {
             y: {
                 beginAtZero: true,
-                title: { display: true, text: yLabel, font: { weight: 'bold' } }
+                title: { 
+                    display: window.innerWidth >= 768, 
+                    text: yLabel, 
+                    font: { weight: 'bold' } 
+                },
+                ticks: {
+                    font: { size: window.innerWidth < 768 ? 9 : 11 }
+                }
             },
             x: {
-                ticks: { maxRotation: 45, minRotation: 45, maxTicksLimit: 8 },
+                ticks: { 
+                    maxRotation: 45, 
+                    minRotation: 45, 
+                    maxTicksLimit: window.innerWidth < 768 ? 5 : 8,
+                    font: { size: window.innerWidth < 768 ? 8 : 10 }
+                },
                 grid: { color: 'rgba(0, 0, 0, 0.05)' }
             }
         }
@@ -360,27 +503,69 @@ function getDualAxisChartOptions(title, yLabel, y1Label) {
     return {
         responsive: true,
         maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
+        interaction: { 
+            mode: 'index', 
+            intersect: false 
+        },
         plugins: {
-            title: { display: true, text: title, font: { size: 14, weight: 'bold' } },
-            legend: { position: 'top' }
+            title: { 
+                display: true, 
+                text: title, 
+                font: { 
+                    size: window.innerWidth < 768 ? 12 : 14, 
+                    weight: 'bold' 
+                } 
+            },
+            legend: { 
+                position: window.innerWidth < 768 ? 'bottom' : 'top',
+                labels: {
+                    font: { size: window.innerWidth < 768 ? 10 : 12 },
+                    boxWidth: window.innerWidth < 768 ? 30 : 40
+                }
+            },
+            tooltip: {
+                enabled: true,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                padding: window.innerWidth < 768 ? 8 : 12,
+                titleFont: { size: window.innerWidth < 768 ? 11 : 13 },
+                bodyFont: { size: window.innerWidth < 768 ? 10 : 12 }
+            }
         },
         scales: {
             y: {
                 type: 'linear',
                 position: 'left',
                 beginAtZero: true,
-                title: { display: true, text: yLabel, font: { weight: 'bold' } }
+                title: { 
+                    display: window.innerWidth >= 768, 
+                    text: yLabel, 
+                    font: { weight: 'bold' } 
+                },
+                ticks: {
+                    font: { size: window.innerWidth < 768 ? 9 : 11 }
+                }
             },
             y1: {
                 type: 'linear',
                 position: 'right',
                 beginAtZero: true,
-                title: { display: true, text: y1Label, font: { weight: 'bold' } },
-                grid: { drawOnChartArea: false }
+                title: { 
+                    display: window.innerWidth >= 768, 
+                    text: y1Label, 
+                    font: { weight: 'bold' } 
+                },
+                grid: { drawOnChartArea: false },
+                ticks: {
+                    font: { size: window.innerWidth < 768 ? 9 : 11 }
+                }
             },
             x: {
-                ticks: { maxRotation: 45, minRotation: 45, maxTicksLimit: 8 },
+                ticks: { 
+                    maxRotation: 45, 
+                    minRotation: 45, 
+                    maxTicksLimit: window.innerWidth < 768 ? 5 : 8,
+                    font: { size: window.innerWidth < 768 ? 8 : 10 }
+                },
                 grid: { color: 'rgba(0, 0, 0, 0.05)' }
             }
         }
