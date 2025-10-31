@@ -1,5 +1,5 @@
 /**
- * SMAA Air Quality Dashboard - Maps Module (COMPLETE FIX)-TEST-
+ * SMAA Air Quality Dashboard - Maps Module (COMPLETE FIX)
  * Handles fixed location and mobile tracking maps
  */
 
@@ -107,94 +107,27 @@ function initFixedMap() {
 async function loadFixedDeviceLocation() {
     try {
         const data = await fetchLatestData();
-        console.log('Loading fixed location for:', data.deviceID);
-        console.log('Mode:', data.mode, 'GPS from API:', data.gps);
+        console.log('Fixed GPS from API:', data.fixed_gps);
         
-        let gps = null;
+        let gps = data.fixed_gps || data.gps;
         
-        // Strategy 1: If device is in fixed mode (0) and has GPS in current reading, use it
-        if (data.mode == 0 && data.gps && data.gps.trim() !== '') {
-            gps = data.gps;
-            console.log('Using GPS from current fixed mode reading:', gps);
-        }
-        
-        // Strategy 2: Check localStorage for cached fixed GPS
-        if (!gps) {
-            const cachedGPS = localStorage.getItem(`${data.deviceID}_fixed_gps`);
-            const cacheTimestamp = localStorage.getItem(`${data.deviceID}_fixed_gps_timestamp`);
-            
-            // Use cached GPS if it's less than 7 days old
-            if (cachedGPS && cacheTimestamp) {
-                const age = Date.now() - parseInt(cacheTimestamp);
-                const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
-                
-                if (age < maxAge) {
-                    gps = cachedGPS;
-                    console.log('Using cached GPS (age: ' + Math.floor(age/1000/60/60) + ' hours):', gps);
-                }
-            }
-        }
-        
-        // Strategy 3: Fetch recent history to find averaged GPS location
-        if (!gps) {
-            console.log('No valid GPS found, fetching history to calculate average...');
-            const history = await fetchHistoricalData(24); // Last 24 hours
-            
-            // Filter for mode 1 (mobile) readings with GPS
-            const mobileReadings = history.filter(d => 
-                d.mode == 1 && d.gps && d.gps.trim() !== ''
-            ).slice(0, 5); // Take last 5 mobile readings
-            
-            if (mobileReadings.length >= 3) {
-                // Calculate average GPS from mobile readings
-                const coords = mobileReadings.map(d => {
-                    const [lat, lon] = d.gps.split(',').map(parseFloat);
-                    return {lat, lon};
-                });
-                
-                const avgLat = coords.reduce((sum, c) => sum + c.lat, 0) / coords.length;
-                const avgLon = coords.reduce((sum, c) => sum + c.lon, 0) / coords.length;
-                gps = `${avgLat.toFixed(6)},${avgLon.toFixed(6)}`;
-                
-                // Cache the averaged GPS with timestamp
-                localStorage.setItem(`${data.deviceID}_fixed_gps`, gps);
-                localStorage.setItem(`${data.deviceID}_fixed_gps_timestamp`, Date.now().toString());
-                
-                console.log('Calculated averaged GPS from', coords.length, 'readings:', gps);
-            }
-        }
-        
-        // Display the location
-        if (gps) {
+        if (gps && gps.trim() !== '') {
             const [lat, lon] = gps.split(',').map(parseFloat);
-            
             if (lat && lon && !isNaN(lat) && !isNaN(lon)) {
-                // Remove old marker if exists
                 if (fixedMarker) fixedMap.removeLayer(fixedMarker);
-                
-                // Add new marker
-                fixedMarker = L.marker([lat, lon], { 
-                    icon: createFixedDeviceIcon(data) 
-                }).addTo(fixedMap);
-                
+                fixedMarker = L.marker([lat, lon], { icon: createFixedDeviceIcon(data) }).addTo(fixedMap);
                 fixedMarker.bindPopup(createFixedPopup(data));
                 fixedMap.setView([lat, lon], 15);
                 updateFixedSidebar(data, lat, lon);
-                
-                // Update status
                 document.getElementById('locationStatus').textContent = 'Location fixed';
                 return;
             }
         }
         
-        // Fallback: No GPS available
-        console.log('No GPS data available for', data.deviceID);
         document.getElementById('fixedLocation').textContent = 'No GPS data available';
         document.getElementById('locationStatus').textContent = 'Waiting for GPS...';
-        
     } catch (error) {
         console.error('Error loading fixed device location:', error);
-        document.getElementById('locationStatus').textContent = 'Error loading location';
     }
 }
 
