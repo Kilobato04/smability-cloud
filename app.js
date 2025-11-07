@@ -1,6 +1,6 @@
 /**
- * SMAA Air Quality Dashboard - Main Application
- * Handles data fetching, UI updates, and user interactions
+ * SMAA Air Quality Dashboard - Main Application v2.0
+ * NOW WITH: AQI Calculations + Hourly History Support
  */
 
 // Global State
@@ -13,8 +13,86 @@ let airQualityChart = null;
 let environmentChart = null;
 let gasesChart = null;
 let noiseChart = null;
+let aqiChart = null; // NEW: AQI trend chart
 let currentChartHours = CONFIG.DEFAULT_CHART_HOURS;
+let currentChartMode = 'realtime'; // NEW: 'realtime' or 'hourly'
 let allDevices = [];
+
+// ==================== AQI CALCULATION (EPA STANDARDS) ====================
+function calculateAQI(pollutant, concentration) {
+    const breakpoints = {
+        pm25: [
+            { cLow: 0.0, cHigh: 12.0, iLow: 0, iHigh: 50 },
+            { cLow: 12.1, cHigh: 35.4, iLow: 51, iHigh: 100 },
+            { cLow: 35.5, cHigh: 55.4, iLow: 101, iHigh: 150 },
+            { cLow: 55.5, cHigh: 150.4, iLow: 151, iHigh: 200 },
+            { cLow: 150.5, cHigh: 250.4, iLow: 201, iHigh: 300 },
+            { cLow: 250.5, cHigh: 500.4, iLow: 301, iHigh: 500 }
+        ],
+        pm10: [
+            { cLow: 0, cHigh: 54, iLow: 0, iHigh: 50 },
+            { cLow: 55, cHigh: 154, iLow: 51, iHigh: 100 },
+            { cLow: 155, cHigh: 254, iLow: 101, iHigh: 150 },
+            { cLow: 255, cHigh: 354, iLow: 151, iHigh: 200 },
+            { cLow: 355, cHigh: 424, iLow: 201, iHigh: 300 },
+            { cLow: 425, cHigh: 604, iLow: 301, iHigh: 500 }
+        ],
+        o3: [
+            { cLow: 0, cHigh: 54, iLow: 0, iHigh: 50 },
+            { cLow: 55, cHigh: 70, iLow: 51, iHigh: 100 },
+            { cLow: 71, cHigh: 85, iLow: 101, iHigh: 150 },
+            { cLow: 86, cHigh: 105, iLow: 151, iHigh: 200 },
+            { cLow: 106, cHigh: 200, iLow: 201, iHigh: 300 }
+        ],
+        co: [
+            { cLow: 0, cHigh: 4400, iLow: 0, iHigh: 50 },
+            { cLow: 4500, cHigh: 9400, iLow: 51, iHigh: 100 },
+            { cLow: 9500, cHigh: 12400, iLow: 101, iHigh: 150 },
+            { cLow: 12500, cHigh: 15400, iLow: 151, iHigh: 200 },
+            { cLow: 15500, cHigh: 30400, iLow: 201, iHigh: 300 },
+            { cLow: 30500, cHigh: 50400, iLow: 301, iHigh: 500 }
+        ]
+    };
+
+    const bps = breakpoints[pollutant];
+    if (!bps) return 0;
+
+    for (let bp of bps) {
+        if (concentration >= bp.cLow && concentration <= bp.cHigh) {
+            const aqi = ((bp.iHigh - bp.iLow) / (bp.cHigh - bp.cLow)) * 
+                        (concentration - bp.cLow) + bp.iLow;
+            return Math.round(aqi);
+        }
+    }
+    return 500; // Hazardous
+}
+
+function getAQIInfo(aqi) {
+    if (aqi <= 50) return { category: 'Good', color: '#10b981', emoji: '😊' };
+    if (aqi <= 100) return { category: 'Moderate', color: '#fbbf24', emoji: '😐' };
+    if (aqi <= 150) return { category: 'Unhealthy for Sensitive', color: '#f97316', emoji: '😷' };
+    if (aqi <= 200) return { category: 'Unhealthy', color: '#ef4444', emoji: '😨' };
+    if (aqi <= 300) return { category: 'Very Unhealthy', color: '#9333ea', emoji: '🤢' };
+    return { category: 'Hazardous', color: '#7f1d1d', emoji: '☠️' };
+}
+
+function calculateOverallAQI(data) {
+    const aqis = {
+        pm25: calculateAQI('pm25', data.pm25 || data.pm25_avg || 0),
+        pm10: calculateAQI('pm10', data.pm10 || data.pm10_avg || 0),
+        o3: calculateAQI('o3', data.o3 || data.o3_avg || 0),
+        co: calculateAQI('co', data.co || data.co_avg || 0)
+    };
+    
+    const maxAQI = Math.max(...Object.values(aqis));
+    const mainPollutant = Object.keys(aqis).find(key => aqis[key] === maxAQI);
+    
+    return { 
+        aqi: maxAQI, 
+        pollutant: mainPollutant.toUpperCase(),
+        individual: aqis 
+    };
+}
 
 // ==================== API CALLS ====================
 async function apiCall(endpoint) {
@@ -37,6 +115,31 @@ async function fetchLatestData() {
 async function fetchHistoricalData(hours = currentChartHours) {
     const data = await apiCall(`?deviceID=${currentDevice}&action=history&hours=${hours}&limit=${CONFIG.HISTORY_LIMIT}`);
     return data.data || [];
+}
+
+// NEW: Fetch hourly history
+async function fetchHourlyHistory(hours) {
+    const days = Math.ceil(hours / 24);
+    const data = await apiCall(`?deviceID=${currentDevice}&action=hourly_history&days=${days}`);
+    
+    // FIXED: Don't filter by time - just return all records from API
+    // The Lambda already returns sorted data, newest first
+    // We want the LATEST available data, even if slightly delayed
+    if (data.data && data.data.length > 0) {
+        console.log(`📊 Hourly history: ${data.data.length} records`);
+        console.log('Latest hourly record:', {
+            timestamp: data.data[data.data.length - 1].hour_timestamp_utc,
+            time: new Date(data.data[data.data.length - 1].hour_timestamp_utc * 1000).toLocaleString(),
+            aqi: data.data[data.data.length - 1].aqi
+        });
+        
+        // For shorter time ranges, return the requested number
+        if (hours < 24) {
+            return data.data.slice(-hours);
+        }
+        return data.data;
+    }
+    return [];
 }
 
 async function fetchDevices() {
@@ -90,6 +193,69 @@ function updateDeviceSummary(data) {
     document.getElementById('offlineDevices').textContent = data.offline_count || 0;
 }
 
+// NEW: Update AQI Card
+async function updateAQICard(data) {
+    let aqiValue, aqiCategory, mainPollutant;
+    
+    try {
+        // FIXED: Use hourly aggregated AQI (more accurate than real-time calculation)
+        const hourlyData = await fetchHourlyHistory(1); // Get last hour
+        
+        if (hourlyData && hourlyData.length > 0) {
+            // CRITICAL FIX: Use hourly data if quality is acceptable
+            // - 75%+ completeness = Use hourly (handles devices starting mid-hour)
+            // - Quality status "good" or better = Use hourly
+            const latestHourly = hourlyData[hourlyData.length - 1];
+            const dataCompleteness = latestHourly.data_completeness || 0;
+            const qualityStatus = latestHourly.quality_status || 'poor';
+            const qualityScore = latestHourly.quality_score || 0;
+            
+            // Use hourly if quality is acceptable (score >= 70 OR completeness >= 75%)
+            if (qualityScore >= 70 || dataCompleteness >= 75) {
+                // Use pre-calculated AQI from Lambda aggregator
+                aqiValue = latestHourly.aqi || 0;
+                aqiCategory = latestHourly.aqi_category || 'Unknown';
+                mainPollutant = latestHourly.aqi_pollutant || 'N/A';
+                
+                console.log(`✅ Using hourly AQI: ${aqiValue} (${dataCompleteness.toFixed(1)}% complete, quality: ${qualityStatus})`);
+                console.log(`   From: ${new Date(latestHourly.hour_timestamp_utc * 1000).toLocaleString()}`);
+            } else {
+                // Poor quality - use real-time calculation
+                console.log(`⚠️ Hourly data low quality (${dataCompleteness.toFixed(1)}%, score: ${qualityScore}) - using real-time`);
+                const aqiData = calculateOverallAQI(data);
+                aqiValue = aqiData.aqi;
+                mainPollutant = aqiData.pollutant;
+                aqiCategory = getAQIInfo(aqiValue).category;
+            }
+        } else {
+            // Fallback: Calculate from real-time if hourly not available
+            const aqiData = calculateOverallAQI(data);
+            aqiValue = aqiData.aqi;
+            mainPollutant = aqiData.pollutant;
+            aqiCategory = getAQIInfo(aqiValue).category;
+            
+            console.log('⚠️ Using calculated AQI (hourly not available):', aqiValue);
+        }
+    } catch (error) {
+        console.error('Error fetching hourly AQI:', error);
+        // Fallback to calculation
+        const aqiData = calculateOverallAQI(data);
+        aqiValue = aqiData.aqi;
+        mainPollutant = aqiData.pollutant;
+        aqiCategory = getAQIInfo(aqiValue).category;
+    }
+    
+    const aqiInfo = getAQIInfo(aqiValue);
+    
+    document.getElementById('aqiValue').textContent = aqiValue;
+    document.getElementById('aqiCategory').textContent = aqiCategory;
+    document.getElementById('aqiPollutant').textContent = `Main: ${mainPollutant}`;
+    
+    const aqiCard = document.querySelector('.aqi-card');
+    aqiCard.style.setProperty('--aqi-color', aqiInfo.color);
+    aqiCard.className = `card aqi-card aqi-${aqiCategory.toLowerCase().replace(/ /g, '-')}`;
+}
+
 function updateUI(data) {
     if (!data) return;
 
@@ -99,22 +265,19 @@ function updateUI(data) {
         setTimeout(() => el.classList.remove('updating'), 300);
     });
 
-    // IMPROVED GPS buffering logic
+    // GPS buffering logic (unchanged)
     const deviceKey = data.deviceID;
     
     if (data.mode == 1 && data.gps && data.gps.trim() !== '') {
-        // Device is mobile - buffer GPS readings
         let gpsBuffer = JSON.parse(localStorage.getItem(`${deviceKey}_gps_buffer`) || '[]');
         const [lat, lon] = data.gps.split(',').map(parseFloat);
         
-        // Add timestamp to buffer entry
         gpsBuffer.push({
             lat, 
             lon, 
             timestamp: data.timestamp
         });
         
-        // Keep last 5 readings
         if (gpsBuffer.length > 5) {
             gpsBuffer = gpsBuffer.slice(-5);
         }
@@ -122,9 +285,6 @@ function updateUI(data) {
         localStorage.setItem(`${deviceKey}_gps_buffer`, JSON.stringify(gpsBuffer));
         localStorage.setItem(`${deviceKey}_previous_mode`, '1');
         
-        console.log(`Buffered GPS for ${deviceKey}: ${data.gps} (buffer: ${gpsBuffer.length}/5)`);
-        
-        // Auto-average when we have 5 points
         if (gpsBuffer.length === 5) {
             const avgLat = gpsBuffer.reduce((sum, p) => sum + p.lat, 0) / 5;
             const avgLon = gpsBuffer.reduce((sum, p) => sum + p.lon, 0) / 5;
@@ -132,39 +292,31 @@ function updateUI(data) {
             
             localStorage.setItem(`${deviceKey}_fixed_gps`, avgGPS);
             localStorage.setItem(`${deviceKey}_fixed_gps_timestamp`, Date.now().toString());
-            
-            console.log(`Auto-saved averaged GPS for ${deviceKey}: ${avgGPS}`);
         }
     }
     
-    // Detect mode transition from mobile (1) to fixed (0)
     const previousMode = localStorage.getItem(`${deviceKey}_previous_mode`);
     if (previousMode == '1' && data.mode == 0) {
         const gpsBuffer = JSON.parse(localStorage.getItem(`${deviceKey}_gps_buffer`) || '[]');
         
         if (gpsBuffer.length >= 3) {
-            // Calculate average from buffer
             const avgLat = gpsBuffer.reduce((sum, p) => sum + p.lat, 0) / gpsBuffer.length;
             const avgLon = gpsBuffer.reduce((sum, p) => sum + p.lon, 0) / gpsBuffer.length;
             const avgGPS = `${avgLat.toFixed(6)},${avgLon.toFixed(6)}`;
             
             localStorage.setItem(`${deviceKey}_fixed_gps`, avgGPS);
             localStorage.setItem(`${deviceKey}_fixed_gps_timestamp`, Date.now().toString());
-            
-            console.log(`Mode transition: Saved averaged GPS for ${deviceKey}: ${avgGPS}`);
         }
         
-        // Clear buffer after transition
         localStorage.removeItem(`${deviceKey}_gps_buffer`);
         localStorage.setItem(`${deviceKey}_previous_mode`, '0');
     }
     
-    // Update current mode
     if (data.mode == 0) {
         localStorage.setItem(`${deviceKey}_previous_mode`, '0');
     }
 
-    // Update sensor values (rest stays the same)
+    // Update sensor values
     document.getElementById('pm25Value').textContent = data.pm25 || '--';
     document.getElementById('pm10Value').textContent = data.pm10 || '--';
     document.getElementById('o3Value').textContent = data.o3 || '--';
@@ -193,6 +345,9 @@ function updateUI(data) {
     updateStatusBadge('o3', data.o3);
     updateStatusBadge('co', data.co);
     
+    // FIXED: Update AQI Card (now async to fetch hourly data)
+    updateAQICard(data).catch(err => console.error('AQI update error:', err));
+    
     // Update metadata
     const lastUpdate = formatRelativeTime(data.timestamp);
     const fullTime = formatTimestamp(data.timestamp);
@@ -210,7 +365,6 @@ function updateUI(data) {
         modeBadge.className = 'mode-badge mode-fixed';
     }
     
-    // Update API status
     updateAPIStatus('online', 'Connected');
 }
 
@@ -222,68 +376,45 @@ function updateStatusBadge(sensor, value) {
     badge.className = 'card-status ' + status.class;
 }
 
-// ==================== MULTI-PANEL CHART MANAGEMENT ====================
+// ==================== CHART MANAGEMENT - REAL-TIME MODE ====================
 function updateChart(data) {
     if (!data || data.length === 0) return;
 
-    const labels = data.map(d => formatTimestamp(d.timestamp)).reverse();
-	const reversedData = data.reverse();  // Reverse data to match labels
-
-    // Panel 1: Air Quality (PM2.5 & PM10)
-    updateAirQualityChart(reversedData, labels);
-    
-    // Panel 2: Environment (Temperature & Humidity)
-    updateEnvironmentChart(reversedData, labels);
-    
-    // Panel 3: Gases (CO & O3)
-    updateGasesChart(reversedData, labels);
-    
-    // Panel 4: Noise
-    updateNoiseChart(reversedData, labels);
-}
-
-// ==================== IMPROVED CHART FUNCTIONS ====================
-// Replace the chart functions in app.js with these:
-
-function updateChart(data) {
-    if (!data || data.length === 0) return;
-
-    // Sort ascending for oldest first (left to right)
     data.sort((a, b) => a.timestamp - b.timestamp);
-    
     const labels = data.map(d => formatTimestamp(d.timestamp));
 
-    // Panel 1: Air Quality (PM2.5 & PM10)
     updateAirQualityChart(data, labels);
-    
-    // Panel 2: Environment (Temperature & Humidity)
     updateEnvironmentChart(data, labels);
-    
-    // Panel 3: Gases (CO & O3)
     updateGasesChart(data, labels);
-    
-    // Panel 4: Noise
     updateNoiseChart(data, labels);
 }
 
+// ==================== CHART MANAGEMENT - HOURLY MODE ====================
+function updateHourlyCharts(data) {
+    if (!data || data.length === 0) return;
+
+    data.sort((a, b) => a.hour_timestamp_utc - b.hour_timestamp_utc);
+    const labels = data.map(d => formatTimestamp(d.hour_timestamp_utc));
+
+    updateAirQualityChartHourly(data, labels);
+    updateEnvironmentChartHourly(data, labels);
+    updateGasesChartHourly(data, labels);
+    updateNoiseChartHourly(data, labels);
+    updateAQIChartHourly(data, labels); // NEW: AQI trend chart
+}
+
+// Real-time chart functions (unchanged)
 function updateAirQualityChart(data, labels) {
     if (airQualityChart) airQualityChart.destroy();
     const ctx = document.getElementById('airQualityChart').getContext('2d');
     
-    // Detect gaps in data (more than 5 minutes between readings)
     const pm25Data = data.map((d, i) => {
-        if (i > 0) {
-            const timeDiff = d.timestamp - data[i-1].timestamp;
-            if (timeDiff > 300) return null; // 5 minute gap
-        }
+        if (i > 0 && d.timestamp - data[i-1].timestamp > 300) return null;
         return d.pm25;
     });
     
     const pm10Data = data.map((d, i) => {
-        if (i > 0) {
-            const timeDiff = d.timestamp - data[i-1].timestamp;
-            if (timeDiff > 300) return null;
-        }
+        if (i > 0 && d.timestamp - data[i-1].timestamp > 300) return null;
         return d.pm10;
     });
     
@@ -300,7 +431,7 @@ function updateAirQualityChart(data, labels) {
                     borderWidth: 2,
                     tension: 0.3,
                     fill: true,
-                    spanGaps: false // Don't connect across null values
+                    spanGaps: false
                 },
                 {
                     label: 'PM10',
@@ -442,6 +573,219 @@ function updateNoiseChart(data, labels) {
     });
 }
 
+// NEW: Hourly chart functions
+function updateAirQualityChartHourly(data, labels) {
+    if (airQualityChart) airQualityChart.destroy();
+    const ctx = document.getElementById('airQualityChart').getContext('2d');
+    
+    // DEBUG: Log what we're charting
+    console.log('📈 Charting hourly air quality:', {
+        records: data.length,
+        firstTime: labels[0],
+        lastTime: labels[labels.length - 1],
+        latestAQI: data[data.length - 1]?.aqi
+    });
+    
+    airQualityChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'PM2.5 (Hourly Avg)',
+                    data: data.map(d => d.pm25_avg),
+                    borderColor: CONFIG.CHART_COLORS.pm25,
+                    backgroundColor: CONFIG.CHART_COLORS.pm25 + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true
+                },
+                {
+                    label: 'PM10 (Hourly Avg)',
+                    data: data.map(d => d.pm10_avg),
+                    borderColor: CONFIG.CHART_COLORS.pm10,
+                    backgroundColor: CONFIG.CHART_COLORS.pm10 + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true
+                }
+            ]
+        },
+        options: getChartOptions('Air Quality - Hourly Averages', 'μg/m³')
+    });
+}
+
+function updateEnvironmentChartHourly(data, labels) {
+    if (environmentChart) environmentChart.destroy();
+    const ctx = document.getElementById('environmentChart').getContext('2d');
+    
+    environmentChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'Temperature (Hourly Avg)',
+                    data: data.map(d => d.temperature_avg),
+                    borderColor: CONFIG.CHART_COLORS.temperature,
+                    backgroundColor: CONFIG.CHART_COLORS.temperature + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    yAxisID: 'y',
+                    fill: true
+                },
+                {
+                    label: 'Humidity (Hourly Avg)',
+                    data: data.map(d => d.humidity_avg),
+                    borderColor: CONFIG.CHART_COLORS.humidity,
+                    backgroundColor: CONFIG.CHART_COLORS.humidity + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    yAxisID: 'y1',
+                    fill: true
+                }
+            ]
+        },
+        options: getDualAxisChartOptions('Environment - Hourly Averages', '°C', '%')
+    });
+}
+
+function updateGasesChartHourly(data, labels) {
+    if (gasesChart) gasesChart.destroy();
+    const ctx = document.getElementById('gasesChart').getContext('2d');
+    
+    gasesChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'CO (Hourly Avg)',
+                    data: data.map(d => d.co_avg),
+                    borderColor: CONFIG.CHART_COLORS.co,
+                    backgroundColor: CONFIG.CHART_COLORS.co + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    yAxisID: 'y',
+                    fill: true
+                },
+                {
+                    label: 'Ozone (Hourly Avg)',
+                    data: data.map(d => d.o3_avg),
+                    borderColor: CONFIG.CHART_COLORS.o3,
+                    backgroundColor: CONFIG.CHART_COLORS.o3 + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    yAxisID: 'y1',
+                    fill: true
+                }
+            ]
+        },
+        options: getDualAxisChartOptions('Gases - Hourly Averages', 'CO (ppb)', 'O₃ (ppb)')
+    });
+}
+
+function updateNoiseChartHourly(data, labels) {
+    if (noiseChart) noiseChart.destroy();
+    const ctx = document.getElementById('noiseChart').getContext('2d');
+    
+    noiseChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'Noise (Hourly Avg)',
+                    data: data.map(d => d.noise_avg),
+                    borderColor: CONFIG.CHART_COLORS.noise,
+                    backgroundColor: CONFIG.CHART_COLORS.noise + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true
+                }
+            ]
+        },
+        options: getChartOptions('Noise - Hourly Average', 'dBA')
+    });
+}
+
+// NEW: AQI Trend Chart
+function updateAQIChartHourly(data, labels) {
+    if (aqiChart) aqiChart.destroy();
+    const ctx = document.getElementById('aqiChart').getContext('2d');
+    
+    const aqiData = data.map(d => d.aqi || 0);
+    const backgroundColors = aqiData.map(aqi => {
+        const info = getAQIInfo(aqi);
+        return info.color + '60';
+    });
+    
+    aqiChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'AQI (Hourly)',
+                    data: aqiData,
+                    backgroundColor: backgroundColors,
+                    borderColor: aqiData.map(aqi => getAQIInfo(aqi).color),
+                    borderWidth: 2
+                }
+            ]
+        },
+        options: {
+            ...getChartOptions('Air Quality Index - Hourly Trend', 'AQI'),
+            plugins: {
+                ...getChartOptions('', '').plugins,
+                annotation: {
+                    annotations: {
+                        good: {
+                            type: 'line',
+                            yMin: 50,
+                            yMax: 50,
+                            borderColor: '#10b981',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            label: {
+                                display: true,
+                                content: 'Good',
+                                position: 'end'
+                            }
+                        },
+                        moderate: {
+                            type: 'line',
+                            yMin: 100,
+                            yMax: 100,
+                            borderColor: '#fbbf24',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            label: {
+                                display: true,
+                                content: 'Moderate',
+                                position: 'end'
+                            }
+                        },
+                        unhealthy: {
+                            type: 'line',
+                            yMin: 150,
+                            yMax: 150,
+                            borderColor: '#f97316',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            label: {
+                                display: true,
+                                content: 'Unhealthy',
+                                position: 'end'
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
 function getChartOptions(title, yLabel) {
     return {
         responsive: true,
@@ -572,11 +916,33 @@ function getDualAxisChartOptions(title, yLabel, y1Label) {
     };
 }
 
-function updateChartRange(hours) {
-    currentChartHours = hours;
+// NEW: Update chart range with tab switching
+async function updateChartRange(mode, hours = null) {
+    currentChartMode = mode;
+    
+    // Update tab buttons
     document.querySelectorAll('.chart-btn').forEach(btn => btn.classList.remove('active'));
     event.target.classList.add('active');
-    fetchHistoricalData(hours).then(updateChart);
+    
+    // Show/hide AQI chart based on mode
+    const aqiChartContainer = document.getElementById('aqiChartContainer');
+    if (aqiChartContainer) {
+        aqiChartContainer.style.display = mode === 'realtime' ? 'none' : 'block';
+    }
+    
+    try {
+        if (mode === 'realtime') {
+            // Real-time mode: Use existing history API (last 2 hours)
+            const data = await fetchHistoricalData(2);
+            updateChart(data);
+        } else {
+            // Hourly mode: Use hourly_history API
+            const data = await fetchHourlyHistory(hours);
+            updateHourlyCharts(data);
+        }
+    } catch (error) {
+        console.error('Error updating charts:', error);
+    }
 }
 
 // ==================== DEVICE MANAGEMENT ====================
@@ -613,12 +979,21 @@ function changeDevice() {
 // ==================== DATA FETCHING ====================
 async function fetchData() {
     try {
-        const [latest, history] = await Promise.all([
-            fetchLatestData(),
-            fetchHistoricalData()
-        ]);
+        const latest = await fetchLatestData();
         updateUI(latest);
-        updateChart(history);
+        
+        // Fetch appropriate chart data based on current mode
+        if (currentChartMode === 'realtime') {
+            const history = await fetchHistoricalData(2);
+            updateChart(history);
+        } else {
+            // Re-fetch hourly data with current hours setting
+            const activeBtn = document.querySelector('.chart-btn.active');
+            const hours = parseInt(activeBtn?.dataset.hours || 24);
+            const hourly = await fetchHourlyHistory(hours);
+            updateHourlyCharts(hourly);
+        }
+        
         resetRefreshCountdown();
     } catch (error) {
         console.error('Error fetching data:', error);
@@ -632,18 +1007,15 @@ function startAutoRefresh() {
     if (refreshTimer) clearInterval(refreshTimer);
     if (countdownTimer) clearInterval(countdownTimer);
     
-    //refreshTimer = setInterval(fetchData, CONFIG.AUTO_REFRESH_INTERVAL);
-	
-	refreshTimer = setInterval(() => {
-	    fetchData();
-	    // NEW: Refresh active tabs
-	    if (document.getElementById('fixed-map-tab').classList.contains('active')) {
-	        loadFixedDeviceLocation();
-	    }
-	    if (document.getElementById('mobile-map-tab').classList.contains('active')) {
-	        loadMobileRoute();
-	    }
-	}, CONFIG.AUTO_REFRESH_INTERVAL);
+    refreshTimer = setInterval(() => {
+        fetchData();
+        if (document.getElementById('fixed-map-tab').classList.contains('active')) {
+            loadFixedDeviceLocation();
+        }
+        if (document.getElementById('mobile-map-tab').classList.contains('active')) {
+            loadMobileRoute();
+        }
+    }, CONFIG.AUTO_REFRESH_INTERVAL);
     
     countdownTimer = setInterval(() => {
         secondsLeft--;
@@ -677,11 +1049,11 @@ function toggleAutoRefresh() {
 
 // ==================== UTILITY FUNCTIONS ====================
 function showAbout() {
-    alert('SMAA Air Quality Monitoring System v1.0\n\nDeveloped for real-time air quality monitoring using AWS IoT Core.\n\nFor support, contact: support@smaa.io');
+    alert('SMAA Air Quality Monitoring System v2.0\n\nNEW: Hourly Historical Data & AQI Index\n\nDeveloped for real-time air quality monitoring using AWS IoT Core.\n\nFor support, contact: support@smaa.io');
 }
 
 function showHelp() {
-    alert('Dashboard Help:\n\n• Select device from dropdown\n• Auto-refresh updates every 10 seconds\n• Click sensor cards for details\n• Use chart buttons to change time range\n• Green indicator = device online\n• Red indicator = device offline');
+    alert('Dashboard Help:\n\n• Select device from dropdown\n• Auto-refresh updates every 20 seconds\n• Click sensor cards for details\n• Use chart tabs:\n  - Real-Time: Last 2 hours\n  - 8H/24H/48H/Week: Hourly averages\n• AQI card shows overall air quality\n• Green indicator = device online\n• Red indicator = device offline');
 }
 
 function exportData() {
@@ -730,7 +1102,7 @@ function hideLoadingOverlay() {
 
 // ==================== INITIALIZATION ====================
 window.onload = async function() {
-    console.log('SMAA Dashboard initializing...');
+    console.log('SMAA Dashboard v2.0 initializing...');
     console.log('API URL:', CONFIG.apiBase);
     console.log('Default Device:', CONFIG.DEFAULT_DEVICE);
     
