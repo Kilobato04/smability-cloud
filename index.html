@@ -3,11 +3,87 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SMAA Air Quality Dashboard</title>
+    <title>SMAA Air Quality Dashboard v2.0</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* NEW: AQI Card Styles */
+        .aqi-card {
+            background: linear-gradient(135deg, var(--aqi-color, #667eea) 0%, var(--aqi-color, #764ba2) 100%);
+            color: white;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .aqi-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: pulse 3s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.3; }
+            50% { transform: scale(1.1); opacity: 0.5; }
+        }
+        
+        .aqi-card .card-header {
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            margin-bottom: 10px;
+        }
+        
+        .aqi-card .card-value {
+            font-size: 3.5em;
+            font-weight: 900;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            margin: 15px 0;
+        }
+        
+        .aqi-category {
+            font-size: 1.2em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin: 10px 0;
+        }
+        
+        .aqi-pollutant {
+            font-size: 0.9em;
+            opacity: 0.9;
+            font-weight: 500;
+        }
+        
+        /* Chart tabs styling */
+        .chart-btn {
+            background: white;
+            border: 2px solid #e5e7eb;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+            font-size: 0.9em;
+        }
+        
+        .chart-btn:hover {
+            background: #f3f4f6;
+            border-color: #667eea;
+        }
+        
+        .chart-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -18,7 +94,7 @@
                 <h1>SMAA Air Quality Monitor</h1>
             </div>
             <div class="header-meta">
-                <span class="version">v1.0</span>
+                <span class="version">v2.0</span>
                 <span class="powered-by">Powered by AWS IoT Core</span>
             </div>
         </header>
@@ -59,7 +135,7 @@
             <div class="status-item">
                 <div class="status-content">
                     <div class="status-label">Auto-Refresh</div>
-                    <div class="status-value refresh-counter" id="refreshCounter">10s</div>
+                    <div class="status-value refresh-counter" id="refreshCounter">20s</div>
                 </div>
             </div>
         </div>
@@ -170,6 +246,17 @@
                     <span class="card-status" id="coStatus">Loading...</span>
                 </div>
 
+                <!-- NEW: AQI Card (replaces purple placeholder) -->
+                <div class="card aqi-card">
+                    <div class="card-header">
+                        <span class="card-title">Air Quality Index</span>
+                        <span class="card-icon">🌡️</span>
+                    </div>
+                    <div class="card-value" id="aqiValue">--</div>
+                    <div class="aqi-category" id="aqiCategory">Loading...</div>
+                    <div class="aqi-pollutant" id="aqiPollutant">--</div>
+                </div>
+
                 <div class="card temp-card">
                     <div class="card-header">
                         <span class="card-title">Temperature</span>
@@ -210,33 +297,40 @@
                 </div>
             </div>
 
-            <!-- Historical Chart -->
-			<div class="chart-container">
-			    <div class="chart-header">
-			        <h2>Historical Data (Last 24 Hours)</h2>
-			        <div class="chart-controls">
-			            <button class="chart-btn" onclick="updateChartRange(6)">6H</button>
-			            <button class="chart-btn active" onclick="updateChartRange(24)">24H</button>
-			            <button class="chart-btn" onclick="updateChartRange(48)">48H</button>
-			        </div>
-			    </div>
+            <!-- UPDATED: Historical Chart with Working Tabs -->
+            <div class="chart-container">
+                <div class="chart-header">
+                    <h2>Real-Time & Historical Hourly Data</h2>
+                    <div class="chart-controls">
+                        <button class="chart-btn active" onclick="updateChartRange('realtime', 2)" data-hours="2">Real-Time</button>
+                        <button class="chart-btn" onclick="updateChartRange('hourly', 8)" data-hours="8">8H</button>
+                        <button class="chart-btn" onclick="updateChartRange('hourly', 24)" data-hours="24">24H</button>
+                        <button class="chart-btn" onclick="updateChartRange('hourly', 48)" data-hours="48">48H</button>
+                        <button class="chart-btn" onclick="updateChartRange('hourly', 168)" data-hours="168">Week</button>
+                    </div>
+                </div>
     
-			    <!-- 4 separate chart panels -->
-			    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 20px;">
-			        <div style="height: 300px;">
-			            <canvas id="airQualityChart"></canvas>
-			        </div>
-			        <div style="height: 300px;">
-			            <canvas id="environmentChart"></canvas>
-			        </div>
-			        <div style="height: 300px;">
-			            <canvas id="gasesChart"></canvas>
-			        </div>
-			        <div style="height: 300px;">
-			            <canvas id="noiseChart"></canvas>
-			        </div>
-			    </div>
-			</div>
+                <!-- 4 existing chart panels + NEW AQI chart -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 20px;">
+                    <!-- NEW: AQI Chart (only shows in hourly mode) -->
+                    <div id="aqiChartContainer" style="height: 300px; display: none;">
+                        <canvas id="aqiChart"></canvas>
+                    </div>
+                    
+                    <div style="height: 300px;">
+                        <canvas id="airQualityChart"></canvas>
+                    </div>
+                    <div style="height: 300px;">
+                        <canvas id="environmentChart"></canvas>
+                    </div>
+                    <div style="height: 300px;">
+                        <canvas id="gasesChart"></canvas>
+                    </div>
+                    <div style="height: 300px;">
+                        <canvas id="noiseChart"></canvas>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Fixed Location Map Tab -->
@@ -255,7 +349,7 @@
                         </div>
                         <div class="info-row">
                             <span class="info-label">Status:</span>
-                            <span class="info-value" id="locationStatus">Loading...</span>  <!-- NEW: Legend for location status -->
+                            <span class="info-value" id="locationStatus">Loading...</span>
                         </div>
                         <div class="info-row">
                             <span class="info-label">PM2.5:</span>
@@ -337,18 +431,16 @@
                     <div class="stat-value" id="peakValue">--</div>
                 </div>
             </div>
-		    <!-- ADD THE CHART RIGHT HERE -->
-		    <div class="chart-container">
-		        <canvas id="mobileChart" style="height: 400px;"></canvas>
-		    </div>
+            
+            <div class="chart-container">
+                <canvas id="mobileChart" style="height: 400px;"></canvas>
+            </div>
         </div>
-		
-	   
 
         <!-- Footer -->
         <footer class="footer">
             <div class="footer-content">
-                <p>&copy; 2025 SMAA Air Quality Monitoring System</p>
+                <p>&copy; 2025 SMAA Air Quality Monitoring System v2.0</p>
                 <p class="footer-links">
                     <a href="#" onclick="showAbout()">About</a>
                     <span>•</span>
