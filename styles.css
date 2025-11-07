@@ -20,6 +20,7 @@
     --border-color: #e5e7eb;
     --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+    --aqi-color: #667eea; /* Default AQI color */
 }
 
 body {
@@ -417,6 +418,123 @@ body {
     color: #991b1b;
 }
 
+/* ==================== NEW: AQI CARD STYLES ==================== */
+.aqi-card {
+    background: linear-gradient(135deg, var(--aqi-color) 0%, var(--aqi-color) 100%);
+    color: white !important;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    border: none;
+}
+
+.aqi-card::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
+    animation: aqiPulse 4s ease-in-out infinite;
+    pointer-events: none;
+}
+
+@keyframes aqiPulse {
+    0%, 100% { 
+        transform: scale(1) rotate(0deg); 
+        opacity: 0.3; 
+    }
+    50% { 
+        transform: scale(1.1) rotate(180deg); 
+        opacity: 0.6; 
+    }
+}
+
+.aqi-card .card-header {
+    border-bottom: 1px solid rgba(255,255,255,0.2);
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    position: relative;
+    z-index: 1;
+}
+
+.aqi-card .card-title {
+    color: rgba(255,255,255,0.95);
+    font-size: 0.9em;
+}
+
+.aqi-card .card-icon {
+    opacity: 0.9;
+}
+
+.aqi-card .card-value {
+    font-size: 4em;
+    font-weight: 900;
+    color: white;
+    text-shadow: 2px 2px 8px rgba(0,0,0,0.2);
+    margin: 20px 0;
+    position: relative;
+    z-index: 1;
+    letter-spacing: -2px;
+}
+
+.aqi-card:hover .card-value {
+    transform: scale(1.05);
+    text-shadow: 2px 2px 12px rgba(0,0,0,0.3);
+}
+
+.aqi-category {
+    font-size: 1.3em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin: 12px 0;
+    position: relative;
+    z-index: 1;
+    text-shadow: 1px 1px 4px rgba(0,0,0,0.2);
+}
+
+.aqi-pollutant {
+    font-size: 0.95em;
+    opacity: 0.95;
+    font-weight: 600;
+    margin-top: 8px;
+    position: relative;
+    z-index: 1;
+}
+
+/* AQI Category-specific styles */
+.aqi-card.aqi-good {
+    --aqi-color: #10b981;
+    box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3);
+}
+
+.aqi-card.aqi-moderate {
+    --aqi-color: #fbbf24;
+    box-shadow: 0 4px 20px rgba(251, 191, 36, 0.3);
+}
+
+.aqi-card.aqi-unhealthy-for-sensitive {
+    --aqi-color: #f97316;
+    box-shadow: 0 4px 20px rgba(249, 115, 22, 0.3);
+}
+
+.aqi-card.aqi-unhealthy {
+    --aqi-color: #ef4444;
+    box-shadow: 0 4px 20px rgba(239, 68, 68, 0.3);
+}
+
+.aqi-card.aqi-very-unhealthy {
+    --aqi-color: #9333ea;
+    box-shadow: 0 4px 20px rgba(147, 51, 234, 0.3);
+}
+
+.aqi-card.aqi-hazardous {
+    --aqi-color: #7f1d1d;
+    box-shadow: 0 4px 20px rgba(127, 29, 29, 0.4);
+}
+
 /* Battery Indicator */
 .battery-indicator {
     margin-top: 12px;
@@ -460,28 +578,35 @@ body {
 .chart-controls {
     display: flex;
     gap: 8px;
+    flex-wrap: wrap;
 }
 
+/* ==================== UPDATED: Chart Button Styles ==================== */
 .chart-btn {
-    padding: 8px 16px;
+    padding: 10px 18px;
     border: 2px solid var(--border-color);
     background: white;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 0.9em;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.3s ease;
+    color: var(--text-secondary);
 }
 
 .chart-btn:hover {
-    border-color: var(--info-color);
-    color: var(--info-color);
+    border-color: var(--primary-color);
+    background: var(--light-bg);
+    color: var(--text-primary);
+    transform: translateY(-2px);
 }
 
 .chart-btn.active {
-    background: var(--info-color);
-    border-color: var(--info-color);
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    border-color: var(--primary-color);
     color: white;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    transform: translateY(-2px);
 }
 
 /* Footer */
@@ -607,10 +732,17 @@ body {
         flex-direction: column;
         align-items: flex-start;
     }
-}
-
-@media (prefers-color-scheme: dark) {
-    /* Optional: Add dark mode styles here */
+    
+    .chart-controls {
+        width: 100%;
+    }
+    
+    .chart-btn {
+        flex: 1;
+        min-width: 60px;
+        padding: 8px 12px;
+        font-size: 0.85em;
+    }
 }
 
 /* ==================== TABS ==================== */
@@ -897,5 +1029,13 @@ body {
     
     .tabs {
         flex-direction: column;
+    }
+    
+    .aqi-card .card-value {
+        font-size: 3em;
+    }
+    
+    .aqi-category {
+        font-size: 1.1em;
     }
 }
