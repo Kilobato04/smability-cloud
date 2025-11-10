@@ -193,52 +193,59 @@ function updateDeviceSummary(data) {
     document.getElementById('offlineDevices').textContent = data.offline_count || 0;
 }
 
-// NEW: Update AQI Card
+// NEW: Update AQI Card (Mode-Aware)
 async function updateAQICard(data) {
     let aqiValue, aqiCategory, mainPollutant;
+    const isMobile = data.mode === 1;
     
     try {
-        // FIXED: Use hourly aggregated AQI (more accurate than real-time calculation)
-        const hourlyData = await fetchHourlyHistory(1); // Get last hour
-        
-        if (hourlyData && hourlyData.length > 0) {
-            // CRITICAL FIX: Use hourly data if quality is acceptable
-            // - 75%+ completeness = Use hourly (handles devices starting mid-hour)
-            // - Quality status "good" or better = Use hourly
-            const latestHourly = hourlyData[hourlyData.length - 1];
-            const dataCompleteness = latestHourly.data_completeness || 0;
-            const qualityStatus = latestHourly.quality_status || 'poor';
-            const qualityScore = latestHourly.quality_score || 0;
-            
-            // Use hourly if quality is acceptable (score >= 70 OR completeness >= 75%)
-            if (qualityScore >= 70 || dataCompleteness >= 75) {
-                // Use pre-calculated AQI from Lambda aggregator
-                aqiValue = latestHourly.aqi || 0;
-                aqiCategory = latestHourly.aqi_category || 'Unknown';
-                mainPollutant = latestHourly.aqi_pollutant || 'N/A';
-                
-                console.log(`✅ Using hourly AQI: ${aqiValue} (${dataCompleteness.toFixed(1)}% complete, quality: ${qualityStatus})`);
-                console.log(`   From: ${new Date(latestHourly.hour_timestamp_utc * 1000).toLocaleString()}`);
-            } else {
-                // Poor quality - use real-time calculation
-                console.log(`⚠️ Hourly data low quality (${dataCompleteness.toFixed(1)}%, score: ${qualityScore}) - using real-time`);
-                const aqiData = calculateOverallAQI(data);
-                aqiValue = aqiData.aqi;
-                mainPollutant = aqiData.pollutant;
-                aqiCategory = getAQIInfo(aqiValue).category;
-            }
-        } else {
-            // Fallback: Calculate from real-time if hourly not available
+        // MOBILE MODE: Always use real-time (user wants current location AQI)
+        if (isMobile) {
             const aqiData = calculateOverallAQI(data);
             aqiValue = aqiData.aqi;
             mainPollutant = aqiData.pollutant;
             aqiCategory = getAQIInfo(aqiValue).category;
             
-            console.log('⚠️ Using calculated AQI (hourly not available):', aqiValue);
+            console.log('📍 Mobile mode: Using real-time AQI:', aqiValue);
+        } else {
+            // FIXED MODE: Prefer hourly averages if available
+            const hourlyData = await fetchHourlyHistory(1);
+            
+            if (hourlyData && hourlyData.length > 0) {
+                const latestHourly = hourlyData[hourlyData.length - 1];
+                const dataCompleteness = latestHourly.data_completeness || 0;
+                const qualityStatus = latestHourly.quality_status || 'poor';
+                const qualityScore = latestHourly.quality_score || 0;
+                
+                // Use hourly if quality is acceptable (score >= 70 OR completeness >= 75%)
+                if (qualityScore >= 70 || dataCompleteness >= 75) {
+                    aqiValue = latestHourly.aqi || 0;
+                    aqiCategory = latestHourly.aqi_category || 'Unknown';
+                    mainPollutant = latestHourly.aqi_pollutant || 'N/A';
+                    
+                    console.log(`✅ Fixed mode - Hourly AQI: ${aqiValue} (${dataCompleteness.toFixed(1)}%, ${qualityStatus})`);
+                } else {
+                    // Poor quality - use real-time
+                    const aqiData = calculateOverallAQI(data);
+                    aqiValue = aqiData.aqi;
+                    mainPollutant = aqiData.pollutant;
+                    aqiCategory = getAQIInfo(aqiValue).category;
+                    
+                    console.log(`⚠️ Fixed mode - Low quality (${qualityScore}) - using real-time:`, aqiValue);
+                }
+            } else {
+                // No hourly data - use real-time
+                const aqiData = calculateOverallAQI(data);
+                aqiValue = aqiData.aqi;
+                mainPollutant = aqiData.pollutant;
+                aqiCategory = getAQIInfo(aqiValue).category;
+                
+                console.log('⚠️ Fixed mode - No hourly data - using real-time:', aqiValue);
+            }
         }
     } catch (error) {
         console.error('Error fetching hourly AQI:', error);
-        // Fallback to calculation
+        // Fallback to real-time calculation
         const aqiData = calculateOverallAQI(data);
         aqiValue = aqiData.aqi;
         mainPollutant = aqiData.pollutant;
@@ -249,7 +256,10 @@ async function updateAQICard(data) {
     
     document.getElementById('aqiValue').textContent = aqiValue;
     document.getElementById('aqiCategory').textContent = aqiCategory;
-    document.getElementById('aqiPollutant').textContent = `Main: ${mainPollutant}`;
+    
+    // Update pollutant text to show mode
+    const modeIndicator = isMobile ? '📍 ' : '';
+    document.getElementById('aqiPollutant').textContent = `${modeIndicator}Main: ${mainPollutant}`;
     
     const aqiCard = document.querySelector('.aqi-card');
     aqiCard.style.setProperty('--aqi-color', aqiInfo.color);
