@@ -44,7 +44,8 @@ const CONFIG = {
     
     devices: [
         {id:'SMAA_001', name:'SMAA_001'},
-        {id:'SMAA_002', name:'SMAA_002'}
+        {id:'SMAA_002', name:'SMAA_002'},
+        {id:'SMAA_003', name:'SMAA_003'} 
     ],
     
     mapDefault: {
