@@ -38,6 +38,21 @@ const SENSOR_GRADIENTS = {
         { value: 9400, color: '#f97316' },
         { value: 12400, color: '#ef4444' }
     ],
+    //New NO2 and CH4 in SENSOR_GRADIENTS
+    no2: [
+        { value: 0, color: '#10b981' },    // Good: Green
+        { value: 54, color: '#fbbf24' },   // Moderate: Yellow
+        { value: 101, color: '#f97316' },  // Unhealthy: Orange
+        { value: 361, color: '#ef4444' }   // Very Unhealthy: Red
+    ],
+
+    ch4: [
+        { value: 0, color: '#10b981' },    // Safe: Green
+        { value: 0.5, color: '#fbbf24' },  // Awareness: Yellow
+        { value: 1.0, color: '#f97316' },  // Caution: Orange
+        { value: 2.0, color: '#ef4444' }   // Danger: Red
+    ],
+    
     temperature: [
         { value: 0, color: '#3b82f6' },    // Cold: Blue
         { value: 15, color: '#10b981' },   // Cool: Green
@@ -79,16 +94,16 @@ function getStatusInfo(sensor, value) {
 function switchTab(tabName) {
     document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    
+
     const tabMap = {
         'dashboard': 'dashboard-tab',
         'fixed-map': 'fixed-map-tab',
         'mobile-map': 'mobile-map-tab'
     };
-    
+
     document.getElementById(tabMap[tabName]).classList.add('active');
     event.target.classList.add('active');
-    
+
     if (tabName === 'fixed-map' && !fixedMap) initFixedMap();
     if (tabName === 'mobile-map' && !mobileMap) initMobileMap();
 }
@@ -108,9 +123,9 @@ async function loadFixedDeviceLocation() {
     try {
         const data = await fetchLatestData();
         console.log('Fixed GPS from API:', data.fixed_gps);
-        
+
         let gps = data.fixed_gps || data.gps;
-        
+
         if (gps && gps.trim() !== '') {
             const [lat, lon] = gps.split(',').map(parseFloat);
             if (lat && lon && !isNaN(lat) && !isNaN(lon)) {
@@ -123,7 +138,7 @@ async function loadFixedDeviceLocation() {
                 return;
             }
         }
-        
+
         document.getElementById('fixedLocation').textContent = 'No GPS data available';
         document.getElementById('locationStatus').textContent = 'Waiting for GPS...';
     } catch (error) {
@@ -175,7 +190,7 @@ function initMobileMap() {
         attribution: '© OpenStreetMap contributors',
         maxZoom: 19
     }).addTo(mobileMap);
-    
+
     // Populate mobile device select (similar to dashboard)
     const mobileSelect = document.getElementById('mobileDeviceSelect');
     mobileSelect.innerHTML = '';
@@ -188,7 +203,7 @@ function initMobileMap() {
         if (device.deviceID === currentDevice) option.selected = true;
         mobileSelect.appendChild(option);
     });
-    
+
     loadMobileRoute();  // Initial load
 }
 
@@ -196,33 +211,33 @@ async function loadMobileRoute() {
     try {
         const hours = document.getElementById('timeRange').value;
         const history = await fetchHistoricalData(hours);
-        
+
         console.log('=== MOBILE ROUTE DEBUG ===');
         console.log('1. History length:', history.length);
         console.log('2. Sample record:', history[0]);
-        
+
         if (history.length > 0) {
 			// Sort ascending for oldest first (left to right on map)
             history.sort((a, b) => a.timestamp - b.timestamp);
-			
+
             const points = history.filter(d => d.gps && d.gps.trim() !== '').map(d => {
                 const [lat, lon] = d.gps.split(',').map(parseFloat);
                 return { lat, lon, data: d };
             });
-            
+
             console.log('3. Points with valid GPS:', points.length);
             console.log('4. First point:', points[0]);
             console.log('5. Sensor select value:', document.getElementById('sensorSelect').value);
-            
+
             if (points.length < 2) {
                 routePoints = [];
                 updateMobileStats([]);  // Show fallback message
                 return;
             }
-            
+
             // CRITICAL: Store points globally
             routePoints = points;
-            
+
             // Clear old route/markers/hotspots
             if (mobileRoute) mobileMap.removeLayer(mobileRoute);
             mobileMarkers.forEach(m => mobileMap.removeLayer(m));
@@ -233,7 +248,7 @@ async function loadMobileRoute() {
             // Create route visualization
             mobileRoute = L.layerGroup().addTo(mobileMap);
             const currentSensor = document.getElementById('sensorSelect').value;
-            
+
             // Option 1: DOTS ONLY (uncomment to use)
             // points.forEach((point, i) => {
             //     const value = parseFloat(point.data[currentSensor]) || 0;
@@ -246,7 +261,7 @@ async function loadMobileRoute() {
             //         weight: 2
             //     }).bindPopup(`${currentSensor.toUpperCase()}: ${value.toFixed(1)}`).addTo(mobileRoute);
             // });
-            
+
             // Option 2: LINES + DOTS (current - comment out if using dots only)
             for (let i = 1; i < points.length; i++) {
                 const startValue = parseFloat(points[i-1].data[currentSensor]) || 0;
@@ -254,15 +269,15 @@ async function loadMobileRoute() {
                 const avgValue = (startValue + endValue) / 2;
                 const color = getColorForValue(currentSensor, avgValue);
                 L.polyline(
-                    [[points[i-1].lat, points[i-1].lon], [points[i].lat, points[i].lon]], 
+                    [[points[i-1].lat, points[i-1].lon], [points[i].lat, points[i].lon]],
                     {color, weight: 4, opacity: 0.7}
                 ).addTo(mobileRoute);
             }
-            
+
             // FIT BOUNDS: Use points directly instead of route.getBounds()
             const bounds = L.latLngBounds(points.map(p => [p.lat, p.lon]));
             mobileMap.fitBounds(bounds);
-            
+
             updateMobileVisualization();
             updateMobileStats(points);
         } else {
@@ -279,25 +294,25 @@ async function loadMobileRoute() {
 
 function updateMobileVisualization() {
     const sensor = document.getElementById('sensorSelect').value;
-    
+
     // Clear existing markers
     mobileMarkers.forEach(m => mobileMap.removeLayer(m));
     hotspotMarkers.forEach(m => mobileMap.removeLayer(m));
     mobileMarkers = [];
     hotspotMarkers = [];
-    
+
     // FIXED: Use stored routePoints instead of trying to access route layers
     if (routePoints.length === 0) {
         console.log('No route points available for visualization');
         return;
     }
-    
+
     // Update the route colors
     if (mobileRoute) {
         mobileMap.removeLayer(mobileRoute);
     }
     mobileRoute = L.layerGroup().addTo(mobileMap);
-    
+
     // Redraw route with new sensor colors
     for (let i = 1; i < routePoints.length; i++) {
         const startValue = parseFloat(routePoints[i-1].data[sensor]) || 0;
@@ -305,16 +320,16 @@ function updateMobileVisualization() {
         const avgValue = (startValue + endValue) / 2;
         const color = getColorForValue(sensor, avgValue);
         L.polyline(
-            [[routePoints[i-1].lat, routePoints[i-1].lon], [routePoints[i].lat, routePoints[i].lon]], 
+            [[routePoints[i-1].lat, routePoints[i-1].lon], [routePoints[i].lat, routePoints[i].lon]],
             {color, weight: 4, opacity: 0.7}
         ).addTo(mobileRoute);
     }
-    
+
     // Add markers
     routePoints.forEach((point, i) => {
         const value = parseFloat(point.data[sensor]) || 0;
         const color = getColorForValue(sensor, value);
-        
+
         // Add marker for each point
         const marker = L.circleMarker([point.lat, point.lon], {
             radius: 6,
@@ -323,15 +338,15 @@ function updateMobileVisualization() {
             fillOpacity: 0.9,
             weight: 2
         }).addTo(mobileMap);
-        
+
         marker.bindPopup(`<b>${sensor.toUpperCase()}</b>: ${value.toFixed(1)}`);
         mobileMarkers.push(marker);
-        
+
         // Add hotspot if value is unhealthy
         const status = getStatusInfo(sensor, value);
         if (status.text === 'Unhealthy') {
             const hotspot = L.circleMarker([point.lat, point.lon], {
-                radius: 10, 
+                radius: 10,
                 color: '#ef4444',
                 fillColor: '#ef4444',
                 fillOpacity: 0.3,
@@ -341,9 +356,9 @@ function updateMobileVisualization() {
             hotspotMarkers.push(hotspot);
         }
     });
-    
+
     updateLegend(sensor);
-    
+
     // UPDATE CHART with new sensor
     updateMobileChart(routePoints, sensor);
 }
@@ -351,10 +366,10 @@ function updateMobileVisualization() {
 function updateLegend(sensor) {
     const legendItems = document.getElementById('legendItems');
     if (!legendItems) return; // Safety check
-    
+
     legendItems.innerHTML = '';
     const gradient = SENSOR_GRADIENTS[sensor] || SENSOR_GRADIENTS.pm25;
-    
+
     gradient.forEach(g => {
         const item = document.createElement('div');
         item.className = 'legend-item';
@@ -368,13 +383,13 @@ function updateLegend(sensor) {
 
 function updateMobileStats(points) {
     console.log('updateMobileStats called with', points.length, 'points'); // Debug
-    
+
     // Get elements
     const distanceEl = document.getElementById('totalDistance');
     const pointsEl = document.getElementById('dataPoints');
     const avgEl = document.getElementById('avgExposure');
     const peakEl = document.getElementById('peakValue');
-    
+
     if (points.length < 2) {
         if (distanceEl) distanceEl.textContent = 'No route data';
         if (pointsEl) pointsEl.textContent = 'No route data';
@@ -382,7 +397,7 @@ function updateMobileStats(points) {
         if (peakEl) peakEl.textContent = 'No route data';
         return;
     }
-    
+
     // Calculate total distance using Leaflet's distanceTo method
     let totalDistance = 0;
     for (let i = 1; i < points.length; i++) {
@@ -390,23 +405,23 @@ function updateMobileStats(points) {
         const p2 = L.latLng(points[i].lat, points[i].lon);
         totalDistance += p1.distanceTo(p2) / 1000;  // Convert to km
     }
-    
+
     console.log('Total distance calculated:', totalDistance); // Debug
-    
+
     if (distanceEl) distanceEl.textContent = `${totalDistance.toFixed(2)} km`;
     if (pointsEl) pointsEl.textContent = points.length;
-    
+
     // Calculate avg and peak for selected sensor
     const sensor = document.getElementById('sensorSelect').value;
     const values = points.map(p => parseFloat(p.data[sensor]) || 0);
     const avgValue = values.reduce((a, b) => a + b, 0) / values.length;
     const peakValue = Math.max(...values);
-    
+
     console.log('Sensor:', sensor, 'Avg:', avgValue, 'Peak:', peakValue); // Debug
-    
+
     if (avgEl) avgEl.textContent = avgValue.toFixed(1);
     if (peakEl) peakEl.textContent = peakValue.toFixed(1);
-    
+
     // Update time series chart
     updateMobileChart(points, sensor);
 }
@@ -418,28 +433,28 @@ function updateMobileChart(points, sensor) {
         console.log('Mobile chart canvas not found');
         return;
     }
-    
+
     // Destroy existing chart if it exists
     if (window.mobileChartInstance) {
         window.mobileChartInstance.destroy();
     }
-    
+
     const ctx = canvas.getContext('2d');
-    
+
     // Prepare data
     const labels = points.map(p => formatTimestamp(p.data.timestamp));
     const values = points.map(p => parseFloat(p.data[sensor]) || 0);
-    
+
     // Get thresholds for the sensor
     const thresholds = CONFIG.THRESHOLDS[sensor] || CONFIG.THRESHOLDS.pm25;
-    
+
     // Color each point based on threshold
     const pointColors = values.map(v => getColorForValue(sensor, v));
     const backgroundColors = values.map(v => {
         const color = getColorForValue(sensor, v);
         return color + '40'; // Add transparency
     });
-    
+
     // Create chart
     window.mobileChartInstance = new Chart(ctx, {
         type: 'line',
@@ -574,9 +589,12 @@ function getSensorUnit(sensor) {
         pm10: 'PM10 (μg/m³)',
         o3: 'Ozone (ppb)',
         co: 'CO (ppb)',
+        no2: 'NO2 (ppb)', // New NO2 sensor units
+        ch4: 'CH4 (%)',   // New CH4 sensor units
         temperature: 'Temperature (°C)',
         humidity: 'Humidity (%)',
         noise: 'Noise (dBA)'
     };
     return units[sensor] || sensor.toUpperCase();
 }
+
