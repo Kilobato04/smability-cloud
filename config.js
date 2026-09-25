@@ -55,7 +55,8 @@ const CONFIG = {
         {id:'SMAA_006', name:'SMAA_006'},
         {id:'SMAA_007', name:'SMAA_007'},
         {id:'SMAA_008', name:'SMAA_008'},
-        {id:'SMAA_009', name:'SMAA_009'}
+        {id:'SMAA_009', name:'SMAA_009'},
+        {id:'SMAA_010', name:'SMAA_010'}
     ],
 
     mapDefault: {
