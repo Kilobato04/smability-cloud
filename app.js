@@ -12,6 +12,7 @@ let secondsLeft = CONFIG.AUTO_REFRESH_INTERVAL / 1000;
 let airQualityChart = null;
 let environmentChart = null;
 let gasesChart = null;
+let no2ch4Chart = null; //NEW global variable for N02 and CH4
 let noiseChart = null;
 let aqiChart = null; // NEW: AQI trend chart
 let currentChartHours = CONFIG.DEFAULT_CHART_HOURS;
@@ -51,6 +52,14 @@ function calculateAQI(pollutant, concentration) {
             { cLow: 12500, cHigh: 15400, iLow: 151, iHigh: 200 },
             { cLow: 15500, cHigh: 30400, iLow: 201, iHigh: 300 },
             { cLow: 30500, cHigh: 50400, iLow: 301, iHigh: 500 }
+        ],
+        no2: [                                                      //NO2 breakpoints
+            { cLow: 0, cHigh: 53, iLow: 0, iHigh: 50 },
+            { cLow: 54, cHigh: 100, iLow: 51, iHigh: 100 },
+            { cLow: 101, cHigh: 360, iLow: 101, iHigh: 150 },
+            { cLow: 361, cHigh: 649, iLow: 151, iHigh: 200 },
+            { cLow: 650, cHigh: 1249, iLow: 201, iHigh: 300 },
+            { cLow: 1250, cHigh: 2049, iLow: 301, iHigh: 500 }
         ]
     };
 
@@ -59,7 +68,7 @@ function calculateAQI(pollutant, concentration) {
 
     for (let bp of bps) {
         if (concentration >= bp.cLow && concentration <= bp.cHigh) {
-            const aqi = ((bp.iHigh - bp.iLow) / (bp.cHigh - bp.cLow)) * 
+            const aqi = ((bp.iHigh - bp.iLow) / (bp.cHigh - bp.cLow)) *
                         (concentration - bp.cLow) + bp.iLow;
             return Math.round(aqi);
         }
@@ -81,16 +90,17 @@ function calculateOverallAQI(data) {
         pm25: calculateAQI('pm25', data.pm25 || data.pm25_avg || 0),
         pm10: calculateAQI('pm10', data.pm10 || data.pm10_avg || 0),
         o3: calculateAQI('o3', data.o3 || data.o3_avg || 0),
-        co: calculateAQI('co', data.co || data.co_avg || 0)
+        co: calculateAQI('co', data.co || data.co_avg || 0),
+        no2: calculateAQI('no2', data.no2 || data.no2_avg || 0)  //new AQI for NO2
     };
-    
+
     const maxAQI = Math.max(...Object.values(aqis));
     const mainPollutant = Object.keys(aqis).find(key => aqis[key] === maxAQI);
-    
-    return { 
-        aqi: maxAQI, 
+
+    return {
+        aqi: maxAQI,
         pollutant: mainPollutant.toUpperCase(),
-        individual: aqis 
+        individual: aqis
     };
 }
 
@@ -121,7 +131,7 @@ async function fetchHistoricalData(hours = currentChartHours) {
 async function fetchHourlyHistory(hours) {
     const days = Math.ceil(hours / 24);
     const data = await apiCall(`?deviceID=${currentDevice}&action=hourly_history&days=${days}`);
-    
+
     // FIXED: Don't filter by time - just return all records from API
     // The Lambda already returns sorted data, newest first
     // We want the LATEST available data, even if slightly delayed
@@ -132,7 +142,7 @@ async function fetchHourlyHistory(hours) {
             time: new Date(data.data[data.data.length - 1].hour_timestamp_utc * 1000).toLocaleString(),
             aqi: data.data[data.data.length - 1].aqi
         });
-        
+
         // For shorter time ranges, return the requested number
         if (hours < 24) {
             return data.data.slice(-hours);
@@ -161,7 +171,7 @@ function formatTimestamp(unixTimestamp) {
         minute: '2-digit',
         hour12: !CONFIG.USE_24_HOUR_FORMAT
     };
-    
+
     if (CONFIG.SHOW_SECONDS) options.second = '2-digit';
     return date.toLocaleString('en-US', options);
 }
@@ -171,7 +181,7 @@ function formatRelativeTime(unixTimestamp) {
     const then = unixTimestamp * 1000;
     const diffMs = now - then;
     const diffMins = Math.floor(diffMs / 60000);
-    
+
     if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
@@ -182,7 +192,7 @@ function formatRelativeTime(unixTimestamp) {
 function updateAPIStatus(status, text) {
     const indicator = document.getElementById('apiStatus');
     const statusText = document.getElementById('apiStatusText');
-    
+
     indicator.className = `status-indicator status-${status}`;
     statusText.textContent = text;
 }
@@ -197,7 +207,7 @@ function updateDeviceSummary(data) {
 async function updateAQICard(data) {
     let aqiValue, aqiCategory, mainPollutant;
     const isMobile = data.mode === 1;
-    
+
     try {
         // MOBILE MODE: Always use real-time (user wants current location AQI)
         if (isMobile) {
@@ -205,24 +215,24 @@ async function updateAQICard(data) {
             aqiValue = aqiData.aqi;
             mainPollutant = aqiData.pollutant;
             aqiCategory = getAQIInfo(aqiValue).category;
-            
+
             console.log('📍 Mobile mode: Using real-time AQI:', aqiValue);
         } else {
             // FIXED MODE: Prefer hourly averages if available
             const hourlyData = await fetchHourlyHistory(1);
-            
+
             if (hourlyData && hourlyData.length > 0) {
                 const latestHourly = hourlyData[hourlyData.length - 1];
                 const dataCompleteness = latestHourly.data_completeness || 0;
                 const qualityStatus = latestHourly.quality_status || 'poor';
                 const qualityScore = latestHourly.quality_score || 0;
-                
+
                 // Use hourly if quality is acceptable (score >= 70 OR completeness >= 75%)
                 if (qualityScore >= 70 || dataCompleteness >= 75) {
                     aqiValue = latestHourly.aqi || 0;
                     aqiCategory = latestHourly.aqi_category || 'Unknown';
                     mainPollutant = latestHourly.aqi_pollutant || 'N/A';
-                    
+
                     console.log(`✅ Fixed mode - Hourly AQI: ${aqiValue} (${dataCompleteness.toFixed(1)}%, ${qualityStatus})`);
                 } else {
                     // Poor quality - use real-time
@@ -230,7 +240,7 @@ async function updateAQICard(data) {
                     aqiValue = aqiData.aqi;
                     mainPollutant = aqiData.pollutant;
                     aqiCategory = getAQIInfo(aqiValue).category;
-                    
+
                     console.log(`⚠️ Fixed mode - Low quality (${qualityScore}) - using real-time:`, aqiValue);
                 }
             } else {
@@ -239,7 +249,7 @@ async function updateAQICard(data) {
                 aqiValue = aqiData.aqi;
                 mainPollutant = aqiData.pollutant;
                 aqiCategory = getAQIInfo(aqiValue).category;
-                
+
                 console.log('⚠️ Fixed mode - No hourly data - using real-time:', aqiValue);
             }
         }
@@ -251,16 +261,16 @@ async function updateAQICard(data) {
         mainPollutant = aqiData.pollutant;
         aqiCategory = getAQIInfo(aqiValue).category;
     }
-    
+
     const aqiInfo = getAQIInfo(aqiValue);
-    
+
     document.getElementById('aqiValue').textContent = aqiValue;
     document.getElementById('aqiCategory').textContent = aqiCategory;
-    
+
     // Update pollutant text to show mode
     const modeIndicator = isMobile ? '📍 ' : '';
     document.getElementById('aqiPollutant').textContent = `${modeIndicator}Main: ${mainPollutant}`;
-    
+
     const aqiCard = document.querySelector('.aqi-card');
     aqiCard.style.setProperty('--aqi-color', aqiInfo.color);
     aqiCard.className = `card aqi-card aqi-${aqiCategory.toLowerCase().replace(/ /g, '-')}`;
@@ -277,51 +287,51 @@ function updateUI(data) {
 
     // GPS buffering logic (unchanged)
     const deviceKey = data.deviceID;
-    
+
     if (data.mode == 1 && data.gps && data.gps.trim() !== '') {
         let gpsBuffer = JSON.parse(localStorage.getItem(`${deviceKey}_gps_buffer`) || '[]');
         const [lat, lon] = data.gps.split(',').map(parseFloat);
-        
+
         gpsBuffer.push({
-            lat, 
-            lon, 
+            lat,
+            lon,
             timestamp: data.timestamp
         });
-        
+
         if (gpsBuffer.length > 5) {
             gpsBuffer = gpsBuffer.slice(-5);
         }
-        
+
         localStorage.setItem(`${deviceKey}_gps_buffer`, JSON.stringify(gpsBuffer));
         localStorage.setItem(`${deviceKey}_previous_mode`, '1');
-        
+
         if (gpsBuffer.length === 5) {
             const avgLat = gpsBuffer.reduce((sum, p) => sum + p.lat, 0) / 5;
             const avgLon = gpsBuffer.reduce((sum, p) => sum + p.lon, 0) / 5;
             const avgGPS = `${avgLat.toFixed(6)},${avgLon.toFixed(6)}`;
-            
+
             localStorage.setItem(`${deviceKey}_fixed_gps`, avgGPS);
             localStorage.setItem(`${deviceKey}_fixed_gps_timestamp`, Date.now().toString());
         }
     }
-    
+
     const previousMode = localStorage.getItem(`${deviceKey}_previous_mode`);
     if (previousMode == '1' && data.mode == 0) {
         const gpsBuffer = JSON.parse(localStorage.getItem(`${deviceKey}_gps_buffer`) || '[]');
-        
+
         if (gpsBuffer.length >= 3) {
             const avgLat = gpsBuffer.reduce((sum, p) => sum + p.lat, 0) / gpsBuffer.length;
             const avgLon = gpsBuffer.reduce((sum, p) => sum + p.lon, 0) / gpsBuffer.length;
             const avgGPS = `${avgLat.toFixed(6)},${avgLon.toFixed(6)}`;
-            
+
             localStorage.setItem(`${deviceKey}_fixed_gps`, avgGPS);
             localStorage.setItem(`${deviceKey}_fixed_gps_timestamp`, Date.now().toString());
         }
-        
+
         localStorage.removeItem(`${deviceKey}_gps_buffer`);
         localStorage.setItem(`${deviceKey}_previous_mode`, '0');
     }
-    
+
     if (data.mode == 0) {
         localStorage.setItem(`${deviceKey}_previous_mode`, '0');
     }
@@ -331,13 +341,15 @@ function updateUI(data) {
     document.getElementById('pm10Value').textContent = data.pm10 || '--';
     document.getElementById('o3Value').textContent = data.o3 || '--';
     document.getElementById('coValue').textContent = data.co || '--';
+    document.getElementById('no2Value').textContent = data.no2 || '--';                     //add NO2
+    document.getElementById('ch4Value').textContent = parseFloat(data.ch4 || 0).toFixed(3); //add CH4
     document.getElementById('tempValue').textContent = parseFloat(data.temperature || 0).toFixed(1);
     document.getElementById('humidityValue').textContent = parseFloat(data.humidity || 0).toFixed(1);
     document.getElementById('noiseValue').textContent = parseFloat(data.noise || 0).toFixed(1);
-    
+
     const batteryValue = parseFloat(data.battery || 0).toFixed(0);
     document.getElementById('batteryValue').textContent = batteryValue;
-    
+
     // Update battery indicator
     const batteryFill = document.getElementById('batteryFill');
     batteryFill.style.width = `${batteryValue}%`;
@@ -348,23 +360,24 @@ function updateUI(data) {
     } else {
         batteryFill.style.background = 'linear-gradient(90deg, #10b981, #34d399)';
     }
-    
+
     // Update status badges
     updateStatusBadge('pm25', data.pm25);
     updateStatusBadge('pm10', data.pm10);
     updateStatusBadge('o3', data.o3);
     updateStatusBadge('co', data.co);
-    
+    updateStatusBadge('no2', data.no2);
+
     // FIXED: Update AQI Card (now async to fetch hourly data)
     updateAQICard(data).catch(err => console.error('AQI update error:', err));
-    
+
     // Update metadata
     const lastUpdate = formatRelativeTime(data.timestamp);
     const fullTime = formatTimestamp(data.timestamp);
     document.getElementById('lastUpdate').textContent = lastUpdate;
     document.getElementById('lastUpdate').title = fullTime;
     document.getElementById('deviceName').textContent = data.deviceID || currentDevice;
-    
+
     // Update mode badge
     const modeBadge = document.getElementById('modeBadge');
     if (data.mode == 1) {
@@ -374,7 +387,7 @@ function updateUI(data) {
         modeBadge.textContent = 'Fixed';
         modeBadge.className = 'mode-badge mode-fixed';
     }
-    
+
     updateAPIStatus('online', 'Connected');
 }
 
@@ -396,6 +409,7 @@ function updateChart(data) {
     updateAirQualityChart(data, labels);
     updateEnvironmentChart(data, labels);
     updateGasesChart(data, labels);
+    updateNO2CH4Chart(data, labels); //NEW NO2 & CH4 chart
     updateNoiseChart(data, labels);
 }
 
@@ -410,24 +424,26 @@ function updateHourlyCharts(data) {
     updateEnvironmentChartHourly(data, labels);
     updateGasesChartHourly(data, labels);
     updateNoiseChartHourly(data, labels);
+    updateNO2CH4ChartHourly(data, labels); // NEW: NO2-CH4 trend chart
     updateAQIChartHourly(data, labels); // NEW: AQI trend chart
+
 }
 
 // Real-time chart functions (unchanged)
 function updateAirQualityChart(data, labels) {
     if (airQualityChart) airQualityChart.destroy();
     const ctx = document.getElementById('airQualityChart').getContext('2d');
-    
+
     const pm25Data = data.map((d, i) => {
         if (i > 0 && d.timestamp - data[i-1].timestamp > 300) return null;
         return d.pm25;
     });
-    
+
     const pm10Data = data.map((d, i) => {
         if (i > 0 && d.timestamp - data[i-1].timestamp > 300) return null;
         return d.pm10;
     });
-    
+
     airQualityChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -462,17 +478,17 @@ function updateAirQualityChart(data, labels) {
 function updateEnvironmentChart(data, labels) {
     if (environmentChart) environmentChart.destroy();
     const ctx = document.getElementById('environmentChart').getContext('2d');
-    
+
     const tempData = data.map((d, i) => {
         if (i > 0 && d.timestamp - data[i-1].timestamp > 300) return null;
         return d.temperature;
     });
-    
+
     const humidityData = data.map((d, i) => {
         if (i > 0 && d.timestamp - data[i-1].timestamp > 300) return null;
         return d.humidity;
     });
-    
+
     environmentChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -509,17 +525,17 @@ function updateEnvironmentChart(data, labels) {
 function updateGasesChart(data, labels) {
     if (gasesChart) gasesChart.destroy();
     const ctx = document.getElementById('gasesChart').getContext('2d');
-    
+
     const coData = data.map((d, i) => {
         if (i > 0 && d.timestamp - data[i-1].timestamp > 300) return null;
         return d.co;
     });
-    
+
     const o3Data = data.map((d, i) => {
         if (i > 0 && d.timestamp - data[i-1].timestamp > 300) return null;
         return d.o3;
     });
-    
+
     gasesChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -553,15 +569,62 @@ function updateGasesChart(data, labels) {
     });
 }
 
+function updateNO2CH4Chart(data, labels) {
+    if (no2ch4Chart) no2ch4Chart.destroy(); //change gasesChart
+    const ctx = document.getElementById('no2ch4Chart').getContext('2d'); //add new canvas in html
+
+    const no2Data = data.map((d, i) => {
+        if (i > 0 && d.timestamp - data[i-1].timestamp > 300) return null;
+        return d.no2;
+    });
+
+    const ch4Data = data.map((d, i) => {
+        if (i > 0 && d.timestamp - data[i-1].timestamp > 300) return null;
+        return d.ch4;
+    });
+
+    no2ch4Chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'NO2',
+                    data: no2Data,
+                    borderColor: CONFIG.CHART_COLORS.no2,
+                    backgroundColor: CONFIG.CHART_COLORS.no2 + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    yAxisID: 'y',
+                    fill: true,
+                    spanGaps: false
+                },
+                {
+                    label: 'CH4',
+                    data: ch4Data,
+                    borderColor: CONFIG.CHART_COLORS.ch4,
+                    backgroundColor: CONFIG.CHART_COLORS.ch4 + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    yAxisID: 'y1',
+                    fill: true,
+                    spanGaps: false
+                }
+            ]
+        },
+        options: getDualAxisChartOptions('Gaseous Pollutants (N02 & CH4)', 'NO2 (ppb)', 'CH4 (%)')
+    });
+}
+
 function updateNoiseChart(data, labels) {
     if (noiseChart) noiseChart.destroy();
     const ctx = document.getElementById('noiseChart').getContext('2d');
-    
+
     const noiseData = data.map((d, i) => {
         if (i > 0 && d.timestamp - data[i-1].timestamp > 300) return null;
         return d.noise;
     });
-    
+
     noiseChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -587,7 +650,7 @@ function updateNoiseChart(data, labels) {
 function updateAirQualityChartHourly(data, labels) {
     if (airQualityChart) airQualityChart.destroy();
     const ctx = document.getElementById('airQualityChart').getContext('2d');
-    
+
     // DEBUG: Log what we're charting
     console.log('📈 Charting hourly air quality:', {
         records: data.length,
@@ -595,7 +658,7 @@ function updateAirQualityChartHourly(data, labels) {
         lastTime: labels[labels.length - 1],
         latestAQI: data[data.length - 1]?.aqi
     });
-    
+
     airQualityChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -628,7 +691,7 @@ function updateAirQualityChartHourly(data, labels) {
 function updateEnvironmentChartHourly(data, labels) {
     if (environmentChart) environmentChart.destroy();
     const ctx = document.getElementById('environmentChart').getContext('2d');
-    
+
     environmentChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -663,7 +726,7 @@ function updateEnvironmentChartHourly(data, labels) {
 function updateGasesChartHourly(data, labels) {
     if (gasesChart) gasesChart.destroy();
     const ctx = document.getElementById('gasesChart').getContext('2d');
-    
+
     gasesChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -694,11 +757,46 @@ function updateGasesChartHourly(data, labels) {
         options: getDualAxisChartOptions('Gases - Hourly Averages', 'CO (ppb)', 'O₃ (ppb)')
     });
 }
+// NEW: Hourly NO2 and CH4 chart functions
+function updateNO2CH4ChartHourly(data, labels) {
+    if (no2ch4Chart) no2ch4Chart.destroy();
+    const ctx = document.getElementById('no2ch4Chart').getContext('2d');
+
+    no2ch4Chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'NO2 (Hourly Avg)',
+                    data: data.map(d => d.no2_avg),
+                    borderColor: CONFIG.CHART_COLORS.no2,
+                    backgroundColor: CONFIG.CHART_COLORS.no2 + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    yAxisID: 'y',
+                    fill: true
+                },
+                {
+                    label: 'CH4 (Hourly Avg)',
+                    data: data.map(d => d.ch4_avg),
+                    borderColor: CONFIG.CHART_COLORS.ch4,
+                    backgroundColor: CONFIG.CHART_COLORS.ch4 + '20',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    yAxisID: 'y1',
+                    fill: true
+                }
+            ]
+        },
+        options: getDualAxisChartOptions('Gases - Hourly Averages', 'NO2 (ppb)', 'CH4 (%)')
+    });
+}
 
 function updateNoiseChartHourly(data, labels) {
     if (noiseChart) noiseChart.destroy();
     const ctx = document.getElementById('noiseChart').getContext('2d');
-    
+
     noiseChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -723,13 +821,13 @@ function updateNoiseChartHourly(data, labels) {
 function updateAQIChartHourly(data, labels) {
     if (aqiChart) aqiChart.destroy();
     const ctx = document.getElementById('aqiChart').getContext('2d');
-    
+
     const aqiData = data.map(d => d.aqi || 0);
     const backgroundColors = aqiData.map(aqi => {
         const info = getAQIInfo(aqi);
         return info.color + '60';
     });
-    
+
     aqiChart = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -800,20 +898,20 @@ function getChartOptions(title, yLabel) {
     return {
         responsive: true,
         maintainAspectRatio: false,
-        interaction: { 
-            mode: 'index', 
-            intersect: false 
+        interaction: {
+            mode: 'index',
+            intersect: false
         },
         plugins: {
-            title: { 
-                display: true, 
-                text: title, 
-                font: { 
-                    size: window.innerWidth < 768 ? 12 : 14, 
-                    weight: 'bold' 
-                } 
+            title: {
+                display: true,
+                text: title,
+                font: {
+                    size: window.innerWidth < 768 ? 12 : 14,
+                    weight: 'bold'
+                }
             },
-            legend: { 
+            legend: {
                 position: window.innerWidth < 768 ? 'bottom' : 'top',
                 labels: {
                     font: { size: window.innerWidth < 768 ? 10 : 12 },
@@ -831,19 +929,19 @@ function getChartOptions(title, yLabel) {
         scales: {
             y: {
                 beginAtZero: true,
-                title: { 
-                    display: window.innerWidth >= 768, 
-                    text: yLabel, 
-                    font: { weight: 'bold' } 
+                title: {
+                    display: window.innerWidth >= 768,
+                    text: yLabel,
+                    font: { weight: 'bold' }
                 },
                 ticks: {
                     font: { size: window.innerWidth < 768 ? 9 : 11 }
                 }
             },
             x: {
-                ticks: { 
-                    maxRotation: 45, 
-                    minRotation: 45, 
+                ticks: {
+                    maxRotation: 45,
+                    minRotation: 45,
                     maxTicksLimit: window.innerWidth < 768 ? 5 : 8,
                     font: { size: window.innerWidth < 768 ? 8 : 10 }
                 },
@@ -857,20 +955,20 @@ function getDualAxisChartOptions(title, yLabel, y1Label) {
     return {
         responsive: true,
         maintainAspectRatio: false,
-        interaction: { 
-            mode: 'index', 
-            intersect: false 
+        interaction: {
+            mode: 'index',
+            intersect: false
         },
         plugins: {
-            title: { 
-                display: true, 
-                text: title, 
-                font: { 
-                    size: window.innerWidth < 768 ? 12 : 14, 
-                    weight: 'bold' 
-                } 
+            title: {
+                display: true,
+                text: title,
+                font: {
+                    size: window.innerWidth < 768 ? 12 : 14,
+                    weight: 'bold'
+                }
             },
-            legend: { 
+            legend: {
                 position: window.innerWidth < 768 ? 'bottom' : 'top',
                 labels: {
                     font: { size: window.innerWidth < 768 ? 10 : 12 },
@@ -890,10 +988,10 @@ function getDualAxisChartOptions(title, yLabel, y1Label) {
                 type: 'linear',
                 position: 'left',
                 beginAtZero: true,
-                title: { 
-                    display: window.innerWidth >= 768, 
-                    text: yLabel, 
-                    font: { weight: 'bold' } 
+                title: {
+                    display: window.innerWidth >= 768,
+                    text: yLabel,
+                    font: { weight: 'bold' }
                 },
                 ticks: {
                     font: { size: window.innerWidth < 768 ? 9 : 11 }
@@ -903,10 +1001,10 @@ function getDualAxisChartOptions(title, yLabel, y1Label) {
                 type: 'linear',
                 position: 'right',
                 beginAtZero: true,
-                title: { 
-                    display: window.innerWidth >= 768, 
-                    text: y1Label, 
-                    font: { weight: 'bold' } 
+                title: {
+                    display: window.innerWidth >= 768,
+                    text: y1Label,
+                    font: { weight: 'bold' }
                 },
                 grid: { drawOnChartArea: false },
                 ticks: {
@@ -914,9 +1012,9 @@ function getDualAxisChartOptions(title, yLabel, y1Label) {
                 }
             },
             x: {
-                ticks: { 
-                    maxRotation: 45, 
-                    minRotation: 45, 
+                ticks: {
+                    maxRotation: 45,
+                    minRotation: 45,
                     maxTicksLimit: window.innerWidth < 768 ? 5 : 8,
                     font: { size: window.innerWidth < 768 ? 8 : 10 }
                 },
@@ -929,17 +1027,17 @@ function getDualAxisChartOptions(title, yLabel, y1Label) {
 // NEW: Update chart range with tab switching
 async function updateChartRange(mode, hours = null) {
     currentChartMode = mode;
-    
+
     // Update tab buttons
     document.querySelectorAll('.chart-btn').forEach(btn => btn.classList.remove('active'));
     event.target.classList.add('active');
-    
+
     // Show/hide AQI chart based on mode
     const aqiChartContainer = document.getElementById('aqiChartContainer');
     if (aqiChartContainer) {
         aqiChartContainer.style.display = mode === 'realtime' ? 'none' : 'block';
     }
-    
+
     try {
         if (mode === 'realtime') {
             // Real-time mode: Use existing history API (last 2 hours)
@@ -961,7 +1059,7 @@ async function loadDevices() {
         const devices = await fetchDevices();
         const select = document.getElementById('deviceSelect');
         select.innerHTML = '';
-        
+
         if (devices.length > 0) {
             devices.forEach(device => {
                 const option = document.createElement('option');
@@ -991,7 +1089,7 @@ async function fetchData() {
     try {
         const latest = await fetchLatestData();
         updateUI(latest);
-        
+
         // Fetch appropriate chart data based on current mode
         if (currentChartMode === 'realtime') {
             const history = await fetchHistoricalData(2);
@@ -1003,7 +1101,7 @@ async function fetchData() {
             const hourly = await fetchHourlyHistory(hours);
             updateHourlyCharts(hourly);
         }
-        
+
         resetRefreshCountdown();
     } catch (error) {
         console.error('Error fetching data:', error);
@@ -1013,10 +1111,10 @@ async function fetchData() {
 // ==================== AUTO-REFRESH ====================
 function startAutoRefresh() {
     if (!CONFIG.FEATURES.enableAutoRefresh) return;
-    
+
     if (refreshTimer) clearInterval(refreshTimer);
     if (countdownTimer) clearInterval(countdownTimer);
-    
+
     refreshTimer = setInterval(() => {
         fetchData();
         if (document.getElementById('fixed-map-tab').classList.contains('active')) {
@@ -1026,7 +1124,7 @@ function startAutoRefresh() {
             loadMobileRoute();
         }
     }, CONFIG.AUTO_REFRESH_INTERVAL);
-    
+
     countdownTimer = setInterval(() => {
         secondsLeft--;
         if (secondsLeft <= 0) secondsLeft = CONFIG.AUTO_REFRESH_INTERVAL / 1000;
@@ -1047,7 +1145,7 @@ function resetRefreshCountdown() {
 function toggleAutoRefresh() {
     autoRefreshEnabled = !autoRefreshEnabled;
     const btn = document.getElementById('autoRefreshBtn');
-    
+
     if (autoRefreshEnabled) {
         btn.innerHTML = '<span class="btn-icon">⏸️</span> Pause Auto-Refresh';
         startAutoRefresh();
@@ -1071,7 +1169,7 @@ function exportData() {
         alert('Export feature is currently disabled.');
         return;
     }
-    
+
     fetchHistoricalData(48).then(data => {
         const csv = convertToCSV(data);
         downloadCSV(csv, `${currentDevice}_${Date.now()}.csv`);
@@ -1079,20 +1177,22 @@ function exportData() {
 }
 
 function convertToCSV(data) {
-    const headers = ['Timestamp', 'PM2.5', 'PM10', 'O3', 'CO', 'Temperature', 'Humidity', 'Noise', 'Battery', 'Mode'];
+    const headers = ['Timestamp', 'PM2.5', 'PM10', 'O3', 'CO', 'NO2','CH4','Temperature', 'Humidity', 'Noise', 'Battery', 'Mode'];
     const rows = data.map(d => [
-        formatTimestamp(d.timestamp),
+        `"${formatTimestamp(d.timestamp)}"`,
         d.pm25,
         d.pm10,
         d.o3,
         d.co,
+        d.no2, //new NO2 and CH4 added
+        d.ch4, //new NO2 and CH4 added
         d.temperature,
         d.humidity,
         d.noise,
         d.battery,
         d.mode == 1 ? 'Mobile' : 'Fixed'
     ]);
-    
+
     return [headers, ...rows].map(row => row.join(',')).join('\n');
 }
 
@@ -1115,7 +1215,7 @@ window.onload = async function() {
     console.log('SMAA Dashboard v2.0 initializing...');
     console.log('API URL:', CONFIG.apiBase);
     console.log('Default Device:', CONFIG.DEFAULT_DEVICE);
-    
+
     try {
         updateAPIStatus('online', 'Connecting...');
         await loadDevices();
@@ -1139,3 +1239,4 @@ window.addEventListener('error', function(e) {
 window.addEventListener('unhandledrejection', function(e) {
     console.error('Unhandled promise rejection:', e.reason);
 });
+
