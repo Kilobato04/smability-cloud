@@ -17,7 +17,7 @@
             position: relative;
             overflow: hidden;
         }
-        
+
         .aqi-card::before {
             content: '';
             position: absolute;
@@ -28,24 +28,24 @@
             background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
             animation: pulse 3s ease-in-out infinite;
         }
-        
+
         @keyframes pulse {
             0%, 100% { transform: scale(1); opacity: 0.3; }
             50% { transform: scale(1.1); opacity: 0.5; }
         }
-        
+
         .aqi-card .card-header {
             border-bottom: 1px solid rgba(255,255,255,0.2);
             margin-bottom: 10px;
         }
-        
+
         .aqi-card .card-value {
             font-size: 3.5em;
             font-weight: 900;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
             margin: 15px 0;
         }
-        
+
         .aqi-category {
             font-size: 1.2em;
             font-weight: 600;
@@ -53,13 +53,13 @@
             letter-spacing: 2px;
             margin: 10px 0;
         }
-        
+
         .aqi-pollutant {
             font-size: 0.9em;
             opacity: 0.9;
             font-weight: 500;
         }
-        
+
         /* Chart tabs styling */
         .chart-btn {
             background: white;
@@ -71,12 +71,12 @@
             transition: all 0.3s;
             font-size: 0.9em;
         }
-        
+
         .chart-btn:hover {
             background: #f3f4f6;
             border-color: #667eea;
         }
-        
+
         .chart-btn.active {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -108,21 +108,21 @@
                     <div class="status-value" id="apiStatusText">Connecting...</div>
                 </div>
             </div>
-            
+
             <div class="status-item">
                 <div class="status-content">
                     <div class="status-label">Last Update</div>
                     <div class="status-value" id="lastUpdate">--:--:--</div>
                 </div>
             </div>
-            
+
             <div class="status-item">
                 <div class="status-content">
                     <div class="status-label">Active Device</div>
                     <div class="status-value" id="deviceName">--</div>
                 </div>
             </div>
-            
+
             <div class="status-item">
                 <div class="status-content">
                     <div class="status-label">Mode</div>
@@ -131,7 +131,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="status-item">
                 <div class="status-content">
                     <div class="status-label">Auto-Refresh</div>
@@ -166,7 +166,7 @@
                         </select>
                     </label>
                 </div>
-                
+
                 <div class="control-buttons">
                     <button class="btn btn-primary" onclick="fetchData()">
                         <span class="btn-icon">🔄</span>
@@ -246,6 +246,26 @@
                     <span class="card-status" id="coStatus">Loading...</span>
                 </div>
 
+                <!-- NEW: NO2 and CH4 Cards-->
+                <div class="card no2-card">
+                    <div class="card-header">
+                        <span class="card-title">Nitrogen Dioxide</span>
+                        <span class="card-icon">🟤</span>
+                    </div>
+                    <div class="card-value" id="no2Value">--</div>
+                    <div class="card-unit">ppb</div>
+                    <span class="card-status" id="no2Status">Loading...</span>
+                </div>
+
+                <div class="card ch4-card">
+                    <div class="card-header">
+                        <span class="card-title">Methane (CH₄)</span>
+                        <span class="card-icon">🔥</span>
+                    </div>
+                    <div class="card-value" id="ch4Value">--</div>
+                    <div class="card-unit">%</div>
+                </div>
+
                 <!-- NEW: AQI Card (replaces purple placeholder) -->
                 <div class="card aqi-card">
                     <div class="card-header">
@@ -309,14 +329,13 @@
                         <button class="chart-btn" onclick="updateChartRange('hourly', 168)" data-hours="168">Week</button>
                     </div>
                 </div>
-    
-                <!-- 4 existing chart panels + NEW AQI chart -->
+
+                <!-- 4 existing chart panels + NEW AQI chart + NEW NO2/CH4 chart -->
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 20px;">
                     <!-- NEW: AQI Chart (only shows in hourly mode) -->
                     <div id="aqiChartContainer" style="height: 300px; display: none;">
                         <canvas id="aqiChart"></canvas>
                     </div>
-                    
                     <div style="height: 300px;">
                         <canvas id="airQualityChart"></canvas>
                     </div>
@@ -325,6 +344,9 @@
                     </div>
                     <div style="height: 300px;">
                         <canvas id="gasesChart"></canvas>
+                    </div>
+                    <div style="height: 300px;">
+                        <canvas id="no2ch4Chart"></canvas>
                     </div>
                     <div style="height: 300px;">
                         <canvas id="noiseChart"></canvas>
@@ -386,6 +408,8 @@
                             <option value="pm10">PM10</option>
                             <option value="o3">Ozone (O₃)</option>
                             <option value="co">Carbon Monoxide</option>
+                            <option value="no2">Nitrogen Dioxide</option>
+                            <option value="ch4">Methane</option>
                             <option value="temperature">Temperature</option>
                             <option value="humidity">Humidity</option>
                             <option value="noise">Noise Level</option>
@@ -431,7 +455,7 @@
                     <div class="stat-value" id="peakValue">--</div>
                 </div>
             </div>
-            
+
             <div class="chart-container">
                 <canvas id="mobileChart" style="height: 400px;"></canvas>
             </div>
@@ -463,3 +487,4 @@
     <script src="maps.js"></script>
 </body>
 </html>
+
