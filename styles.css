@@ -350,6 +350,8 @@ body {
 .pm10-card { color: #8b5cf6; }
 .o3-card { color: #ec4899; }
 .co-card { color: #f59e0b; }
+.no2-card { color: #06b6d4; }  /* NO2 and CH4 Sensor Cards Colors */
+.ch4-card { color: #84cc16; }
 .temp-card { color: #ef4444; }
 .humidity-card { color: #10b981; }
 .noise-card { color: #14b8a6; }
@@ -441,13 +443,13 @@ body {
 }
 
 @keyframes aqiPulse {
-    0%, 100% { 
-        transform: scale(1) rotate(0deg); 
-        opacity: 0.3; 
+    0%, 100% {
+        transform: scale(1) rotate(0deg);
+        opacity: 0.3;
     }
-    50% { 
-        transform: scale(1.1) rotate(180deg); 
-        opacity: 0.6; 
+    50% {
+        transform: scale(1.1) rotate(180deg);
+        opacity: 0.6;
     }
 }
 
@@ -689,54 +691,54 @@ body {
     body {
         padding: 12px;
     }
-    
+
     .header {
         flex-direction: column;
         text-align: center;
         gap: 16px;
     }
-    
+
     .logo h1 {
         font-size: 1.4em;
     }
-    
+
     .status-bar {
         grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
         padding: 16px;
         gap: 16px;
     }
-    
+
     .controls {
         flex-direction: column;
         align-items: stretch;
     }
-    
+
     .control-buttons {
         flex-direction: column;
     }
-    
+
     .btn {
         width: 100%;
         justify-content: center;
     }
-    
+
     .grid {
         grid-template-columns: 1fr;
     }
-    
+
     .device-summary {
         grid-template-columns: 1fr;
     }
-    
+
     .chart-header {
         flex-direction: column;
         align-items: flex-start;
     }
-    
+
     .chart-controls {
         width: 100%;
     }
-    
+
     .chart-btn {
         flex: 1;
         min-width: 60px;
@@ -1006,36 +1008,37 @@ body {
     .map-container-wrapper {
         flex-direction: column;
     }
-    
+
     .map-sidebar {
         width: 100%;
     }
-    
+
     .map-view {
         height: 400px;
     }
-    
+
     .map-view-mobile {
         height: 400px;
     }
-    
+
     .mobile-controls {
         flex-direction: column;
     }
-    
+
     .legend-items {
         justify-content: center;
     }
-    
+
     .tabs {
         flex-direction: column;
     }
-    
+
     .aqi-card .card-value {
         font-size: 3em;
     }
-    
+
     .aqi-category {
         font-size: 1.1em;
     }
 }
+
