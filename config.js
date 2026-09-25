@@ -7,31 +7,35 @@ const CONFIG = {
     AUTO_REFRESH_INTERVAL: 20000,  // 20 seconds
     HISTORY_LIMIT: 100,
     DEFAULT_CHART_HOURS: 24,
-    
+
     FEATURES: {
         enableAutoRefresh: true,
         enableExport: true
     },
-    
+
     THRESHOLDS: {
         pm25: { good: 12, moderate: 35.4 },
         pm10: { good: 54, moderate: 154 },
         o3: { good: 54, moderate: 70 },
-        co: { good: 4400, moderate: 9400 }
+        co: { good: 4400, moderate: 9400 },
+        no2: { good: 53, moderate: 100 },   //new gas NO2
+        ch4: { good: 0.5, moderate: 1.0 }   //new gas CH4
     },
-    
+
     CHART_COLORS: {
         pm25: '#3b82f6',      // Blue
         pm10: '#8b5cf6',      // Purple
         o3: '#ec4899',        // Pink
         co: '#f59e0b',        // Amber
+        no2: '#06b6d4',       // Cyan   new color NO2
+        ch4: '#84cc16',       // Lime Green new color CH4
         temperature: '#ef4444', // Red
         humidity: '#10b981',  // Green
         noise: '#14b8a6',     // Teal
         battery: '#6366f1',   // Indigo
         aqi: '#667eea'        // NEW: AQI color
     },
-    
+
     // NEW: AQI Color Scale (EPA Standard)
     AQI_COLORS: {
         good: '#10b981',              // 0-50: Green
@@ -41,24 +45,24 @@ const CONFIG = {
         veryUnhealthy: '#9333ea',     // 201-300: Purple
         hazardous: '#7f1d1d'          // 301+: Maroon
     },
-    
+
     devices: [
         {id:'SMAA_001', name:'SMAA_001'},
         {id:'SMAA_002', name:'SMAA_002'},
         {id:'SMAA_003', name:'SMAA_003'},
-        {id:'SMAA_004', name:'SMAA_004'}, 
+        {id:'SMAA_004', name:'SMAA_004'},
         {id:'SMAA_005', name:'SMAA_005'},
         {id:'SMAA_006', name:'SMAA_006'},
         {id:'SMAA_007', name:'SMAA_007'},
         {id:'SMAA_008', name:'SMAA_008'},
         {id:'SMAA_009', name:'SMAA_009'}
     ],
-    
+
     mapDefault: {
         lat: 19.4326,
         lng: -99.1332,
         zoom: 13
     },
-    
+
     pollIntervalSec: 10
 };
